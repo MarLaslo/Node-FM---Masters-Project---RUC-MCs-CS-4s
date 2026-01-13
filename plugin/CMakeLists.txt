@@ -1,4 +1,9 @@
-juce_add_plugin(NodeFMWebViewPlugin
+cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
+
+project(JuceWebViewPlugin VERSION 0.1.0)
+
+
+juce_add_plugin(${PROJECT_NAME}
     COMPANY_NAME "FractalAudio"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
@@ -9,17 +14,17 @@ juce_add_plugin(NodeFMWebViewPlugin
     FORMATS VST3 AU Standalone
 )
 
-target_sources(NodeFMWebViewPlugin
+target_sources(${PROJECT_NAME}
 PRIVATE
     src/PluginEditor.cpp
     src/PluginProcessor.cpp
 )
 
 target_include_directories(
-    NodeFMWebViewPlugin PRIVATE include
+    ${PROJECT_NAME} PRIVATE include
 )
 
-target_link_libraries(NodeFMWebViewPlugin
+target_link_libraries(${PROJECT_NAME}
 PRIVATE
     juce::juce_audio_utils
 PUBLIC
@@ -27,7 +32,7 @@ PUBLIC
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
 
-target_compile_definitions(NodeFMWebViewPlugin 
+target_compile_definitions(${PROJECT_NAME} 
 PUBLIC 
     JUCE_WEB_BROWSER=1
     JUCE_USE_CURL=0
