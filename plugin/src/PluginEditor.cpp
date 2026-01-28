@@ -48,24 +48,18 @@ namespace nodefm_plugin
         : AudioProcessorEditor(&p), processorRef(p),
           webView{juce::WebBrowserComponent::Options{}.withResourceProvider([this](const auto &url)
                                                                             { return getResource(url); })
-                      .withNativeIntegrationEnabled()}
+                      .withNativeIntegrationEnabled().withUserScript(R"(console.log("Backend loaded");)").withInitialisationData("info", JUCE_PRODUCT_NAME)}
     {
         juce::ignoreUnused(processorRef);
 
         addAndMakeVisible(webView);
-        
+
         webView.goToURL(webView.getResourceProviderRoot());
 
         runJavaScriptButton.onClick = [this]()
         {
-            constexpr auto JAVASCRIPT_TO_RUN{"console.log('Hello from JUCE WebView Component!');"};
-            webView.evaluateJavascript(JAVASCRIPT_TO_RUN, [](juce::WebBrowserComponent::EvaluationResult result){
-                if (const auto* resultPtr = result.getResult()){
-                    std::cout << "JavaScript evaluation result: " << resultPtr->toString() << std::endl;
-                } else {
-                    std::cout << "JavaScript evaluation failed because: " << result.getError()->message << std::endl;
-                }
-            });
+            static const juce::Identifier CREATE_NODE_EVENT{"createNodeEvent"};
+            webView.emitEventIfBrowserIsVisible(CREATE_NODE_EVENT, "basic/Merge");
         };
 
         addAndMakeVisible(runJavaScriptButton);
@@ -89,10 +83,9 @@ namespace nodefm_plugin
     void AudioPluginAudioProcessorEditor::resized()
     {
         auto bounds = getLocalBounds();
-        webView.setBounds(bounds.removeFromRight(getWidth()/ 2));
+        webView.setBounds(bounds.removeFromRight(static_cast<int>(getWidth() * 0.7)));
         runJavaScriptButton.setBounds(bounds.removeFromTop(50).reduced(5));
         emitJavaScriptEventButton.setBounds(bounds.removeFromTop(50).reduced(5));
-
     }
 
     auto AudioPluginAudioProcessorEditor::getResource(const juce::String &url) -> std::optional<Resource>

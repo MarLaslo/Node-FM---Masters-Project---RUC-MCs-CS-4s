@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 
-project(JuceWebViewPlugin VERSION 0.1.0)
+project(NodeFMWebView VERSION 0.1.0)
 
 
 juce_add_plugin(${PROJECT_NAME}
@@ -12,6 +12,13 @@ juce_add_plugin(${PROJECT_NAME}
     PLUGIN_CODE NGFM
     IS_MIDI_EFFECT FALSE
     FORMATS VST3 AU Standalone
+)
+
+get_target_property(PRODUCT_NAME NodeFMWebView JUCE_PRODUCT_NAME)
+
+target_compile_definitions(${PROJECT_NAME}
+    PRIVATE
+        JUCE_PRODUCT_NAME="${PRODUCT_NAME}"
 )
 
 target_sources(${PROJECT_NAME}

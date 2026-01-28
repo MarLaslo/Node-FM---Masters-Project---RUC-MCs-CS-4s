@@ -1,4 +1,4 @@
-.PHONY: config config-debug config-release build build-debug build-release run run-debug run-release rebuild rebuild-debug rebuild-release
+.PHONY: config config-debug config-release build build-debug build-release run run-debug run-release rebuild rebuild-debug rebuild-release clean rebuild-clean
 
 config-debug:
 	cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
@@ -16,10 +16,10 @@ build-debug: config-debug build
 build-release: config-release build
 
 run-debug:
-	./build/plugin/NodeFMWebViewPlugin_artefacts/Debug/Standalone/NodeFMWebViewPlugin.app/Contents/MacOS/NodeFMWebViewPlugin
+	./build/plugin/NodeFMWebView_artefacts/Debug/Standalone/NodeFMWebView.app/Contents/MacOS/NodeFMWebView
 
 run-release:
-	./build/plugin/NodeFMWebViewPlugin_artefacts/Release/Standalone/NodeFMWebViewPlugin.app/Contents/MacOS/NodeFMWebViewPlugin
+	./build/plugin/NodeFMWebView_artefacts/Release/Standalone/NodeFMWebView.app/Contents/MacOS/NodeFMWebView
 
 run: run-debug
 
@@ -28,3 +28,8 @@ rebuild-debug: build-debug run-debug
 rebuild-release: build-release run-release
 
 rebuild: rebuild-debug
+
+clean:
+	rm -rf build
+
+rebuild-clean: clean rebuild
