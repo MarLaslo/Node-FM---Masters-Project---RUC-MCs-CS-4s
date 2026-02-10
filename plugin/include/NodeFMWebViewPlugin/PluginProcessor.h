@@ -44,6 +44,9 @@ namespace nodefm_plugin
         void setStateInformation(const void *data, int sizeInBytes) override;
 
     private:
+        void splitBufferByEvents(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages);
+        void handleMIDI(uint8_t data0, u_int8_t data1, u_int8_t data2);
+        void render(juce::AudioBuffer<float>& buffer, int sampleCount, int bufferOffset);
         //==============================================================================
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)
     };
