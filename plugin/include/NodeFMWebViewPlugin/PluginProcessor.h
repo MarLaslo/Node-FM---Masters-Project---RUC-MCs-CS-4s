@@ -1,6 +1,6 @@
 #pragma once
-
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "Synth.h"
 
 namespace nodefm_plugin
 {
@@ -14,7 +14,7 @@ namespace nodefm_plugin
         //==============================================================================
         void prepareToPlay(double sampleRate, int samplesPerBlock) override;
         void releaseResources() override;
-
+        void reset() override;
         bool isBusesLayoutSupported(const BusesLayout &layouts) const override;
 
         void processBlock(juce::AudioBuffer<float> &, juce::MidiBuffer &) override;
@@ -44,9 +44,10 @@ namespace nodefm_plugin
         void setStateInformation(const void *data, int sizeInBytes) override;
 
     private:
+        Synth synth;
         void splitBufferByEvents(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages);
         void handleMIDI(uint8_t data0, u_int8_t data1, u_int8_t data2);
-        void render(juce::AudioBuffer<float>& buffer, int sampleCount, int bufferOffset);
+        void render(juce::AudioBuffer<float> &buffer, int sampleCount, int bufferOffset);
         //==============================================================================
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)
     };
