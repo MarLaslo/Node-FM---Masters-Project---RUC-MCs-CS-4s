@@ -11,16 +11,16 @@ namespace nodefm_plugin
         ~AudioPluginAudioProcessorEditor() override;
 
         void resized() override;
+        void sendMessageToJS(const juce::String& eventType, const juce::var& data);
 
     private:
-    using Resource = juce::WebBrowserComponent::Resource;
-    std::optional<Resource> getResource(const juce::String &url);
+        using Resource = juce::WebBrowserComponent::Resource;
+        std::optional<Resource> getResource(const juce::String &url);
         // This reference is provided as a quick way for your editor to
         // access the processor object that created it.
         AudioPluginAudioProcessor &processorRef;
 
-        juce::TextButton runJavaScriptButton{"Run JavaScript"};
-        juce::TextButton emitJavaScriptEventButton{"Emit JavaScript Event"};
+        void handleMessageFromJS(const juce::String& message);
         juce::WebBrowserComponent webView;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)

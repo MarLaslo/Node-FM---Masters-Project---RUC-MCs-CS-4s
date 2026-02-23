@@ -1,0 +1,271 @@
+#include "NodeFMWebViewPlugin/dsp/DSPGraph.h"
+#include "NodeFMWebViewPlugin/Oscillator.h"
+#include <queue>
+#include <unordered_set>
+
+namespace nodefm_plugin
+{
+    NodeID DSPGraph::addNode(std::unique_ptr<DSPNode> node)
+    {
+        NodeID id = nextNodeID++;
+        node->nodeId = id;
+        nodes[id] = std::move(node);
+        
+        // Set first node as output by default
+        if (outputNodeID == 0)
+        {
+            outputNodeID = id;
+        }
+        
+        updateProcessingOrder();
+        return id;
+    };
+
+    void DSPGraph::setOutputNode(NodeID id)
+    {
+        outputNodeID = id;
+    }
+
+    ConnectionID DSPGraph::addConnection(NodeID source, NodeID dest, float amount)
+    {
+        ConnectionID id = nextConnectionID++;
+        connections.push_back({id, source, dest, amount});
+        
+        DBG("Added connection: Node " << (int)source << " -> Node " << (int)dest << " (amount: " << amount << ")");
+        
+        updateProcessingOrder(); // Recalculate topological order
+        return id;
+    }
+
+    void DSPGraph::setSampleRate(float sr)
+    {
+        // Pass sample rate to all oscillators
+        for (auto& [id, node] : nodes)
+        {
+            if (auto* osc = dynamic_cast<Oscillator*>(node.get()))
+            {
+                osc->setSampleRate(sr);
+            }
+        }
+    }
+    
+    void DSPGraph::setNoteFrequency(float freq)
+    {
+        // Update all oscillators with the new base frequency
+        DBG("Setting note frequency: " << freq << " Hz");
+        for (auto& [id, node] : nodes)
+        {
+            if (auto* osc = dynamic_cast<Oscillator*>(node.get()))
+            {
+                osc->setFrequency(freq);
+                DBG("  Node " << (int)id << " frequency: " << freq << " * ratio " << osc->frequencyRatio << " = " << (freq * osc->frequencyRatio) << " Hz");
+            }
+        }
+    }
+    
+    void DSPGraph::noteOn()
+    {
+        // Trigger note on for all oscillators
+        DBG("Note On - Triggering ADSR envelopes");
+        for (auto& [id, node] : nodes)
+        {
+            if (auto* osc = dynamic_cast<Oscillator*>(node.get()))
+            {
+                osc->noteOn();
+            }
+        }
+    }
+    
+    void DSPGraph::noteOff()
+    {
+        // Trigger note off for all oscillators
+        DBG("Note Off - Releasing ADSR envelopes");
+        for (auto& [id, node] : nodes)
+        {
+            if (auto* osc = dynamic_cast<Oscillator*>(node.get()))
+            {
+                osc->noteOff();
+            }
+        }
+    }
+    
+    bool DSPGraph::isAnyEnvelopeActive() const
+    {
+        // Check if any oscillator's envelope is still active
+        for (const auto& [id, node] : nodes)
+        {
+            if (const auto* osc = dynamic_cast<const Oscillator*>(node.get()))
+            {
+                if (osc->envelope.isActive())
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    void DSPGraph::updateConnection(NodeID source, NodeID dest, float newAmount)
+    {
+        for (auto& conn : connections)
+        {
+            if (conn.source == source && conn.destination == dest)
+            {
+                DBG("Updated connection: Node " << (int)source << " -> Node " << (int)dest << " (amount: " << conn.ammount << " -> " << newAmount << ")");
+                conn.ammount = newAmount;
+                return;
+            }
+        }
+        DBG("WARNING: Connection not found for update: Node " << (int)source << " -> Node " << (int)dest);
+    }
+    
+    DSPNode* DSPGraph::getNode(NodeID id)
+    {
+        auto it = nodes.find(id);
+        if (it != nodes.end())
+        {
+            return it->second.get();
+        }
+        return nullptr;
+    }
+
+    float DSPGraph::process()
+    {
+        // Process nodes in order
+        for (NodeID id : processingOrder)
+        {
+            if (auto nodeIt = nodes.find(id); nodeIt != nodes.end())
+            {
+                auto *node = nodeIt->second.get();
+                if (!node) continue;
+                
+                // Reset modulation input before applying connections
+                node->resetModulation();
+                
+                // Apply input connections for this node
+                for (const auto &conn : connections)
+                {
+                    if (conn.destination == id)
+                    {
+                        // Safety check: ensure both source and destination exist
+                        auto sourceIt = nodes.find(conn.source);
+                        
+                        if (sourceIt != nodes.end())
+                        {
+                            auto *sourceNode = sourceIt->second.get();
+                            
+                            if (sourceNode)
+                            {
+                                float *sourceOut = sourceNode->getOutput();
+                                if (sourceOut)
+                                {
+                                    node->addModulation(sourceOut[0] * conn.ammount);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Process the node
+                node->process(1); // Process 1 sample
+            }
+        }
+
+        // Return output from designated output node
+        if (auto it = nodes.find(outputNodeID); it != nodes.end())
+        {
+            return it->second->getOutput()[0];
+        }
+        return 0.0f;
+    };
+
+    void DSPGraph::updateProcessingOrder()
+    {
+        // Kahn's algorithm for topological sorting
+        processingOrder.clear();
+        
+        DBG("=== Updating Processing Order ===");
+        DBG("Total nodes: " << nodes.size());
+        DBG("Total connections: " << connections.size());
+        
+        if (nodes.empty())
+        {
+            DBG("No nodes to process");
+            return;
+        }
+        
+        // Build in-degree map (count incoming connections for each node)
+        std::unordered_map<NodeID, int> inDegree;
+        for (const auto& [id, node] : nodes)
+        {
+            inDegree[id] = 0;
+        }
+        
+        for (const auto& conn : connections)
+        {
+            if (nodes.find(conn.destination) != nodes.end())
+            {
+                inDegree[conn.destination]++;
+            }
+        }
+        
+        // Queue of nodes with no incoming connections (can be processed first)
+        std::queue<NodeID> queue;
+        for (const auto& [id, degree] : inDegree)
+        {
+            if (degree == 0)
+            {
+                queue.push(id);
+            }
+        }
+        
+        // Process nodes in topological order
+        while (!queue.empty())
+        {
+            NodeID current = queue.front();
+            queue.pop();
+            processingOrder.push_back(current);
+            
+            // For each outgoing connection from current node
+            for (const auto& conn : connections)
+            {
+                if (conn.source == current)
+                {
+                    NodeID dest = conn.destination;
+                    if (nodes.find(dest) != nodes.end())
+                    {
+                        inDegree[dest]--;
+                        if (inDegree[dest] == 0)
+                        {
+                            queue.push(dest);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // If we didn't process all nodes, there's a cycle
+        // In that case, just add remaining nodes in any order (fallback)
+        if (processingOrder.size() != nodes.size())
+        {
+            DBG("WARNING: Cycle detected! Processed " << processingOrder.size() << " of " << nodes.size() << " nodes");
+            std::unordered_set<NodeID> processed(processingOrder.begin(), processingOrder.end());
+            for (const auto& [id, node] : nodes)
+            {
+                if (processed.find(id) == processed.end())
+                {
+                    DBG("Adding unprocessed node (cycle): " << (int)id);
+                    processingOrder.push_back(id);
+                }
+            }
+        }
+        
+        // Print final processing order
+        DBG("Final processing order:");
+        for (size_t i = 0; i < processingOrder.size(); ++i)
+        {
+            DBG("  [" << i << "] Node ID: " << (int)processingOrder[i]);
+        }
+        DBG("===========================");
+    }
+}

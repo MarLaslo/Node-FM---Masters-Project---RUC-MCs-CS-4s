@@ -26,6 +26,7 @@ PRIVATE
     src/PluginEditor.cpp
     src/PluginProcessor.cpp
     src/Synth.cpp
+    src/DSPGraph.cpp
 )
 
 target_include_directories(

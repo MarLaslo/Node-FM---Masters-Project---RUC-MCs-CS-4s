@@ -14,6 +14,11 @@ namespace nodefm_plugin
         void reset();
         void render(float **outputBufferes, int sampleCount);
         void midiMessage(u_int8_t data0, u_int8_t data1, u_int8_t data2);
+        NodeID addNodeToGraph(const juce::String& nodeType, const juce::var& data);
+        void addConnection(NodeID sourceId, NodeID destId, float amount);
+        void updateNodeParameter(NodeID nodeId, const juce::String& paramName, float value);
+        void updateConnectionAmount(NodeID sourceId, NodeID destId, float amount);
+        NodeID getOutputNodeID() const;
 
     private:
         float sampleRate;

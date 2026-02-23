@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Synth.h"
+#include "GraphTypes.h"
 
 namespace nodefm_plugin
 {
@@ -42,6 +43,14 @@ namespace nodefm_plugin
         //==============================================================================
         void getStateInformation(juce::MemoryBlock &destData) override;
         void setStateInformation(const void *data, int sizeInBytes) override;
+
+        NodeID addNode(const juce::String& nodeType, const juce::var& data);
+        void addConnection(NodeID sourceId, NodeID destId, float amount);
+        void updateNodeParameter(NodeID nodeId, const juce::String& paramName, float value);
+        void updateConnectionAmount(NodeID sourceId, NodeID destId, float amount);
+        void sendEventToUI(const juce::String& eventType, const juce::var& data);
+        NodeID getOutputNodeID() const;
+
 
     private:
         Synth synth;

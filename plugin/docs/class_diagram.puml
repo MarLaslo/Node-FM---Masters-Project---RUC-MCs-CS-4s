@@ -1,0 +1,195 @@
+@startuml
+
+title Node-Based FM Synthesiser Architecture (Current Implementation)
+
+package "JUCE Framework" {
+    class AudioProcessor <<JUCE>> {
+        +processBlock()
+        +prepareToPlay()
+    }
+    
+    class AudioProcessorEditor <<JUCE>> {
+        +resized()
+    }
+    
+    class WebBrowserComponent <<JUCE>> {
+        +goToURL()
+        +emitEventIfBrowserIsVisible()
+        +getResource()
+    }
+}
+
+package "UI Layer" {
+    class AudioPluginAudioProcessorEditor {
+        -processorRef : AudioPluginAudioProcessor&
+        -webView : WebBrowserComponent
+        -runJavaScriptButton : TextButton
+        -emitJavaScriptEventButton : TextButton
+        
+        +resized()
+        +getResource(url) : Resource
+    }
+    
+    note right of AudioPluginAudioProcessorEditor
+        Hosts the React UI via WebBrowserComponent
+        Handles bidirectional communication with frontend
+    end note
+}
+
+package "Audio Processing Layer" {
+    class AudioPluginAudioProcessor {
+        -synth : Synth
+        
+        +processBlock(buffer, midiMessages)
+        +prepareToPlay(sampleRate, samplesPerBlock)
+        +handleMIDI(data0, data1, data2)
+        +render(buffer, sampleCount, bufferOffset)
+        +createEditor() : AudioProcessorEditor*
+    }
+    
+    class Synth {
+        -sampleRate : float
+        -voice : Voice
+        -graph : shared_ptr<DSPGraph>
+        
+        +allocateResources(sampleRate, samplePerBlock)
+        +deAllocateResources()
+        +reset()
+        +render(outputBuffers, sampleCount)
+        +midiMessage(data0, data1, data2)
+        +handleGraphChange(change)
+        +swapGraph(newGraph)
+        -noteOn(note, velocity)
+        -noteOff(note)
+    }
+    
+    class Voice {
+        +note : int
+        +osc : Oscillator
+        
+        +reset()
+        +render() : float
+    }
+    
+    class Oscillator {
+        +amplitude : float
+        +inc : float
+        +phase : float
+        
+        +reset()
+        +nextSample() : float
+    }
+}
+
+package "DSP Graph System" {
+    class DSPGraph {
+        -nodes : Map<NodeID, shared_ptr<DSPNode>>
+        -connections : List<Connection>
+        -processingOrder : List<NodeID>
+        -sampleRate : double
+        
+        +addNode(id, type) : DSPNode*
+        +removeNode(id)
+        +addConnection(src, dst, amount)
+        +removeConnection(src, dst)
+        +computeProcessingOrder() <<Kahn>>
+        +processBlock(midiNote, velocity, numSamples)
+        +getOutput() : float*
+    }
+    
+    class Connection {
+        +sourceNodeID : NodeID
+        +destinationNodeID : NodeID
+        +amount : float
+        
+        +getSource() : DSPNode*
+        +getDestination() : DSPNode*
+    }
+    
+    abstract class DSPNode {
+        #outputBuffer : vector<float>
+        #nodeID : NodeID
+        
+        +{abstract} process(numSamples)
+        +getOutput() : float*
+        +reset()
+    }
+    
+    class OperatorNode {
+        -frequency : float
+        -phase : float
+        -amplitude : float
+        
+        +process(numSamples)
+        +setFrequency(freq)
+        +applyModulation(modBuffer, amount)
+    }
+    
+    class OutputNode {
+        -gain : float
+        
+        +process(numSamples)
+        +mixInputs()
+    }
+    
+    class EffectNode {
+        -parameters : Map<string, float>
+        
+        +process(numSamples)
+        +applyEffect()
+    }
+    
+    class GraphChange {
+        +type : ChangeType
+        +nodeID : NodeID
+        +data : variant
+    }
+    
+    enum ChangeType {
+        ADD_NODE
+        REMOVE_NODE
+        ADD_CONNECTION
+        REMOVE_CONNECTION
+        UPDATE_PARAMETER
+    }
+}
+
+' Inheritance relationships
+AudioProcessor <|-- AudioPluginAudioProcessor
+AudioProcessorEditor <|-- AudioPluginAudioProcessorEditor
+DSPNode <|-- OperatorNode
+DSPNode <|-- OutputNode
+DSPNode <|-- EffectNode
+
+' Composition relationships
+AudioPluginAudioProcessorEditor *-- WebBrowserComponent
+AudioPluginAudioProcessorEditor --> AudioPluginAudioProcessor : references
+AudioPluginAudioProcessor *-- Synth
+Synth *-- Voice : legacy
+Synth o-- DSPGraph : new graph-based
+Voice *-- Oscillator
+DSPGraph "1" *-- "*" DSPNode
+DSPGraph "1" *-- "*" Connection
+Connection --> DSPNode : source
+Connection --> DSPNode : destination
+GraphChange --> ChangeType
+
+' Communication flow
+AudioPluginAudioProcessorEditor ..> Synth : sends GraphChange
+Synth ..> DSPGraph : applies changes (thread-safe)
+
+note bottom of DSPGraph
+    Thread-safe graph swapping:
+    - UI thread sends GraphChange
+    - Synth builds new graph
+    - Audio thread atomically swaps graph pointer
+end note
+
+note top of Synth
+    Hybrid approach during migration:
+    - Legacy Voice/Oscillator for simple playback
+    - DSPGraph for node-based synthesis
+    Can gradually migrate to full graph-based approach
+end note
+
+@enduml

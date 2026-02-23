@@ -3,43 +3,117 @@
   <head>
     <meta charset="UTF-8" />
     <script type="module" src="js/index.js"></script>
-    <link rel="stylesheet" type="text/css" href="litegraph.css" />
-    <script type="text/javascript" src="./js/nodes/litegraph.js"></script>
-    <script type="text/javascript" src="./js/nodes/operator.js"></script>
     <title>NodeFM WebView Plugin</title>
+    <style>
+      body { 
+        margin: 0; 
+        padding: 0; 
+        font-family: Arial, sans-serif;
+        overflow: hidden;
+      }
+      #toolbar {
+        background: #2c2c2c;
+        padding: 12px;
+        color: white;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      }
+      #toolbar button {
+        background: #4a90e2;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        cursor: pointer;
+        border-radius: 4px;
+        font-weight: 500;
+      }
+      #toolbar button:hover {
+        background: #357abd;
+      }
+      #canvas {
+        display: block;
+        background: #1a1a1a;
+        cursor: default;
+      }
+      #paramPanel {
+        position: absolute;
+        right: 20px;
+        top: 80px;
+        width: 280px;
+        background: #2c2c2c;
+        border: 1px solid #4a90e2;
+        border-radius: 8px;
+        padding: 16px;
+        color: white;
+        display: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      }
+      #paramPanel h4 {
+        margin: 0 0 16px 0;
+        color: #4a90e2;
+        border-bottom: 1px solid #444;
+        padding-bottom: 8px;
+      }
+      #paramPanel h3 {
+        margin: 20px 0 10px 0;
+        font-size: 14px;
+        color: #6ab0f3;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        border-bottom: 1px solid #444;
+        padding-bottom: 6px;
+      }
+      #paramPanel h3:first-child {
+        margin-top: 0;
+      }
+      .param-control {
+        margin-bottom: 16px;
+      }
+      .param-control label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 12px;
+        color: #aaa;
+        text-transform: uppercase;
+      }
+      .param-control input[type="range"] {
+        width: 100%;
+        margin-bottom: 4px;
+      }
+      .param-control input[type="number"] {
+        width: 100%;
+        padding: 6px;
+        background: #1a1a1a;
+        border: 1px solid #444;
+        color: white;
+        border-radius: 4px;
+      }
+      .param-value {
+        display: inline-block;
+        float: right;
+        color: #4a90e2;
+        font-weight: bold;
+      }
+    </style>
   </head>
   <body>
-      <canvas
-        id="mycanvas"
-        width="1024"
-        height="720"
-        style="border: 1px solid"
-      ></canvas>
-    <main>
-        <h1 id="info">
-
-        </h1>
-      <script>
-        var graph = new LGraph();
-
-        var canvas = new LGraphCanvas("#mycanvas", graph);
-
-        window.graph = graph;
-        window.canvas = canvas;
-
-        var node_const = LiteGraph.createNode("basic/const");
-        node_const.pos = [200, 200];
-        graph.add(node_const);
-        node_const.setValue(4.5);
-
-        var node_watch = LiteGraph.createNode("basic/watch");
-        node_watch.pos = [700, 200];
-        graph.add(node_watch);
-
-        node_const.connect(0, node_watch, 0);
-
-        graph.start();
-      </script>
-    </main>
+    <div id="toolbar">
+      <h3 style="margin: 0;">NodeFM Synthesizer</h3>
+      <button id="addOscillatorBtn">Add Oscillator</button>
+      <button id="addOperatorBtn">Add Operator</button>
+      <button id="clearGraphBtn">Clear Graph</button>
+      <span id="info" style="margin-left: auto;"></span>
+    </div>
+    <canvas id="canvas"></canvas>
+    
+    <!-- Parameter Panel -->
+    <div id="paramPanel">
+      <h4 id="paramTitle">Node Parameters</h4>
+      <div id="paramControls">
+        <!-- Dynamic controls will be inserted here -->
+      </div>
+    </div>
   </body>
 </html>

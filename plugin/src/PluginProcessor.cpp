@@ -22,7 +22,7 @@ namespace nodefm_plugin
     //==============================================================================
     const juce::String AudioPluginAudioProcessor::getName() const
     {
-        return JucePlugin_Name;
+        return "NodeFMWebView";
     }
 
     bool AudioPluginAudioProcessor::acceptsMidi() const
@@ -184,8 +184,44 @@ namespace nodefm_plugin
         {
             outputBuffers[1] = buffer.getWritePointer(1) + bufferOffset;
         }
-        
+
         synth.render(outputBuffers, sampleCount);
+    }
+
+    NodeID AudioPluginAudioProcessor::addNode(const juce::String &nodeType, const juce::var &data)
+    {
+        return synth.addNodeToGraph(nodeType, data);
+    }
+
+    void AudioPluginAudioProcessor::addConnection(NodeID sourceId, NodeID destId, float amount)
+    {
+        synth.addConnection(sourceId, destId, amount);
+    }
+
+    void AudioPluginAudioProcessor::updateNodeParameter(NodeID nodeId, const juce::String& paramName, float value)
+    {
+        synth.updateNodeParameter(nodeId, paramName, value);
+    }
+
+    void AudioPluginAudioProcessor::updateConnectionAmount(NodeID sourceId, NodeID destId, float amount)
+    {
+        synth.updateConnectionAmount(sourceId, destId, amount);
+    }
+
+    void AudioPluginAudioProcessor::sendEventToUI(const juce::String& eventType, const juce::var& data)
+    {
+        if (auto* editor = getActiveEditor())
+        {
+            if (auto* editorCast = dynamic_cast<AudioPluginAudioProcessorEditor*>(editor))
+            {
+                editorCast->sendMessageToJS(eventType, data);
+            }
+        }
+    }
+
+    NodeID AudioPluginAudioProcessor::getOutputNodeID() const
+    {
+        return synth.getOutputNodeID();
     }
 
     //==============================================================================
