@@ -128,55 +128,62 @@ namespace nodefm_plugin
         }
         return nullptr;
     }
-
-    float DSPGraph::process()
+    
+    void DSPGraph::process(float* outputBuffer, int numSamples)
     {
-        // Process nodes in order
-        for (NodeID id : processingOrder)
+        // Process entire buffer efficiently
+        for (int sample = 0; sample < numSamples; ++sample)
         {
-            if (auto nodeIt = nodes.find(id); nodeIt != nodes.end())
+            // Process nodes in topological order
+            for (NodeID id : processingOrder)
             {
-                auto *node = nodeIt->second.get();
-                if (!node) continue;
-                
-                // Reset modulation input before applying connections
-                node->resetModulation();
-                
-                // Apply input connections for this node
-                for (const auto &conn : connections)
+                if (auto nodeIt = nodes.find(id); nodeIt != nodes.end())
                 {
-                    if (conn.destination == id)
+                    auto *node = nodeIt->second.get();
+                    if (!node) continue;
+                    
+                    // Reset modulation input before applying connections
+                    node->resetModulation();
+                    
+                    // Apply input connections for this node
+                    for (const auto &conn : connections)
                     {
-                        // Safety check: ensure both source and destination exist
-                        auto sourceIt = nodes.find(conn.source);
-                        
-                        if (sourceIt != nodes.end())
+                        if (conn.destination == id)
                         {
-                            auto *sourceNode = sourceIt->second.get();
+                            // Safety check: ensure both source and destination exist
+                            auto sourceIt = nodes.find(conn.source);
                             
-                            if (sourceNode)
+                            if (sourceIt != nodes.end())
                             {
-                                float *sourceOut = sourceNode->getOutput();
-                                if (sourceOut)
+                                auto *sourceNode = sourceIt->second.get();
+                                
+                                if (sourceNode)
                                 {
-                                    node->addModulation(sourceOut[0] * conn.ammount);
+                                    float *sourceOut = sourceNode->getOutput();
+                                    if (sourceOut)
+                                    {
+                                        node->addModulation(sourceOut[0] * conn.ammount);
+                                    }
                                 }
                             }
                         }
                     }
+                    
+                    // Process the node (single sample)
+                    node->process(1);
                 }
-                
-                // Process the node
-                node->process(1); // Process 1 sample
+            }
+
+            // Write output from designated output node
+            if (auto it = nodes.find(outputNodeID); it != nodes.end())
+            {
+                outputBuffer[sample] = it->second->getOutput()[0];
+            }
+            else
+            {
+                outputBuffer[sample] = 0.0f;
             }
         }
-
-        // Return output from designated output node
-        if (auto it = nodes.find(outputNodeID); it != nodes.end())
-        {
-            return it->second->getOutput()[0];
-        }
-        return 0.0f;
     };
 
     void DSPGraph::updateProcessingOrder()
@@ -267,5 +274,20 @@ namespace nodefm_plugin
             DBG("  [" << i << "] Node ID: " << (int)processingOrder[i]);
         }
         DBG("===========================");
-    }
-}
+    }    
+    void DSPGraph::clearGraph()
+    {
+        DBG("=== Clearing DSP Graph ===");
+        
+        // Clear all nodes and connections
+        nodes.clear();
+        connections.clear();
+        processingOrder.clear();
+        
+        // Reset ID counters
+        nextNodeID = 1;
+        nextConnectionID = 1;
+        outputNodeID = 0;
+        
+        DBG("Graph cleared successfully");
+    }}

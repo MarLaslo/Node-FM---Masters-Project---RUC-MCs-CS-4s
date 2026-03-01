@@ -24,25 +24,40 @@ void nodefm_plugin::Synth::render(float **outputBuffers, int sampleCount)
 {
     float *outputBufferLeft = outputBuffers[0];
     float *outputBufferRight = outputBuffers[1];
-    for (int sample = 0; sample < sampleCount; ++sample)
+    
+    if (voice.note > 0 || voice.isEnvelopeActive())
     {
-        float output = 0.0f;
-        if (voice.note > 0 || voice.isEnvelopeActive())
-        {
-            output = voice.render();
-            
-            // Clear the note once envelopes are done
-            if (voice.note > 0 && !voice.isEnvelopeActive())
-            {
-                voice.note = 0;
-            }
-        }
-        outputBufferLeft[sample] = output;
+        // Process entire buffer at once for better performance
+        voice.render(outputBufferLeft, sampleCount);
+        
+        // Copy to right channel if it exists
         if (outputBufferRight != nullptr)
         {
-            outputBufferRight[sample] = output;
+            for (int sample = 0; sample < sampleCount; ++sample)
+            {
+                outputBufferRight[sample] = outputBufferLeft[sample];
+            }
+        }
+        
+        // Clear the note once envelopes are done
+        if (voice.note > 0 && !voice.isEnvelopeActive())
+        {
+            voice.note = 0;
         }
     }
+    else
+    {
+        // Fill with silence
+        for (int sample = 0; sample < sampleCount; ++sample)
+        {
+            outputBufferLeft[sample] = 0.0f;
+            if (outputBufferRight != nullptr)
+            {
+                outputBufferRight[sample] = 0.0f;
+            }
+        }
+    }
+    
     protectYourEars(outputBufferLeft, sampleCount);
     protectYourEars(outputBufferRight, sampleCount);
 }
@@ -257,5 +272,28 @@ void nodefm_plugin::Synth::updateConnectionAmount(NodeID sourceId, NodeID destId
 
 nodefm_plugin::NodeID nodefm_plugin::Synth::getOutputNodeID() const
 {
+    return voice.outputNodeID;
+}
+
+nodefm_plugin::NodeID nodefm_plugin::Synth::clearGraph()
+{
+    DBG("Synth: Clearing graph");
+    
+    // Clear the graph
+    if (voice.graph)
+    {
+        voice.graph->clearGraph();
+        
+        // Recreate output node
+        auto outputNode = std::make_unique<Output>();
+        voice.outputNodeID = voice.graph->addNode(std::move(outputNode));
+        voice.graph->setOutputNode(voice.outputNodeID);
+        
+        DBG("Synth: Graph cleared, new output node ID: " << (int)voice.outputNodeID);
+    }
+    
+    // Reset voice state
+    voice.note = 0;
+    
     return voice.outputNodeID;
 }

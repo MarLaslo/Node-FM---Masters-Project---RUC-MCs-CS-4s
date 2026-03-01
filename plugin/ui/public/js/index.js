@@ -16,6 +16,7 @@ class NodeGraph {
     this.connectionStart = null;
     this.selectedConnection = null;
     this.mousePos = { x: 0, y: 0 };
+    this.hoveredParamNode = null; // Track which node's params are hovered
     
     this.setupCanvas();
     this.setupEventListeners();
@@ -54,7 +55,6 @@ class NodeGraph {
       if (port !== null) {
         this.isConnecting = true;
         this.connectionStart = { node, portIndex: port };
-        console.log('Starting connection from', node.title, 'output', port);
         return;
       }
     }
@@ -75,6 +75,14 @@ class NodeGraph {
       const node = this.nodes[i];
       if (pos.x >= node.x && pos.x <= node.x + node.width &&
           pos.y >= node.y && pos.y <= node.y + node.height) {
+        
+        // Check if clicking on a parameter area for nodes that support it
+        if (typeof node.onParameterClick === 'function') {
+          const handled = node.onParameterClick(pos.x, pos.y, this);
+          if (handled) return; // Don't drag if parameter was clicked
+        }
+        
+        // Normal node selection and dragging
         this.selectedNode = node;
         this.isDragging = true;
         this.dragOffset = { x: pos.x - node.x, y: pos.y - node.y };
@@ -124,6 +132,24 @@ class NodeGraph {
     const pos = this.getMousePos(e);
     this.mousePos = pos;
     
+    // Update cursor and hover state based on what's under the mouse
+    let cursorStyle = 'default';
+    this.hoveredParamNode = null;
+    
+    // Check if hovering over a parameter area
+    for (let node of this.nodes) {
+      if (node instanceof OperatorNode) {
+        if (pos.y >= node.y + 25 && pos.y <= node.y + 95 && 
+            pos.x >= node.x && pos.x <= node.x + node.width) {
+          cursorStyle = 'pointer';
+          this.hoveredParamNode = node;
+          break;
+        }
+      }
+    }
+    
+    this.canvas.style.cursor = cursorStyle;
+    
     if (this.isDragging && this.selectedNode) {
       this.selectedNode.x = pos.x - this.dragOffset.x;
       this.selectedNode.y = pos.y - this.dragOffset.y;
@@ -139,7 +165,6 @@ class NodeGraph {
         const port = node.getInputPortAt(pos.x, pos.y);
         if (port !== null && node !== this.connectionStart.node) {
           this.addConnection(this.connectionStart.node, this.connectionStart.portIndex, node, port);
-          console.log('Connected:', this.connectionStart.node.title, '->', node.title);
           break;
         }
       }
@@ -172,18 +197,29 @@ class NodeGraph {
         }
       });
       window.__JUCE__.backend.emitEvent("messageFromJS", message);
-      console.log('Sent connection to backend:', message);
     }
   }
   
   addNode(node) {
     this.nodes.push(node);
-    console.log('Added node:', node.title, 'Total nodes:', this.nodes.length);
   }
   
   clear() {
+    // Clear frontend state
     this.nodes = [];
     this.connections = [];
+    this.selectedNode = null;
+    this.selectedConnection = null;
+    this.hideParameterPanel();
+    
+    // Send message to backend to clear the DSP graph
+    if (window.__JUCE__ && window.__JUCE__.backend) {
+      const message = JSON.stringify({
+        type: "CLEAR_GRAPH"
+      });
+      window.__JUCE__.backend.emitEvent("messageFromJS", message);
+      console.log("Sent CLEAR_GRAPH message to backend");
+    }
   }
   
   render() {
@@ -209,7 +245,13 @@ class NodeGraph {
     }
     
     // Draw all nodes
-    this.nodes.forEach(node => node.draw(this.ctx));
+    this.nodes.forEach(node => {
+      if (node instanceof OperatorNode) {
+        node.draw(this.ctx, node === this.hoveredParamNode);
+      } else {
+        node.draw(this.ctx);
+      }
+    });
   }
   
   drawConnection(conn) {
@@ -269,28 +311,17 @@ class NodeGraph {
     title.textContent = `${node.title} (ID: ${node.backendId})`;
     controls.innerHTML = '';
     
-    // Create controls based on node type
+    // Only show ADSR for operators
     if (node instanceof OperatorNode) {
-      // Synthesis parameters
-      const synthSection = document.createElement('div');
-      synthSection.innerHTML = '<h3>Synthesis</h3>';
-      controls.appendChild(synthSection);
-      
-      this.createParameterControl(controls, 'Frequency Ratio', 'frequencyRatio', node.frequencyRatio || node.ratio, 0.125, 8, 0.125, node);
-      this.createParameterControl(controls, 'Amplitude', 'amplitude', node.amplitude, 0, 1, 0.01, node);
-      
       // ADSR Envelope section
       const adsrSection = document.createElement('div');
       adsrSection.innerHTML = '<h3>ADSR Envelope</h3>';
       controls.appendChild(adsrSection);
       
-      this.createParameterControl(controls, 'Attack (s)', 'attack', node.attack, 0.001, 2, 0.001, node);
-      this.createParameterControl(controls, 'Decay (s)', 'decay', node.decay, 0.001, 2, 0.001, node);
-      this.createParameterControl(controls, 'Sustain', 'sustain', node.sustain, 0, 1, 0.01, node);
-      this.createParameterControl(controls, 'Release (s)', 'release', node.release, 0.001, 5, 0.001, node);
-    } else if (node instanceof OscillatorNode) {
-      this.createParameterControl(controls, 'Frequency', 'frequency', node.frequency, 20, 2000, 1, node);
-      this.createParameterControl(controls, 'Amplitude', 'amplitude', node.amplitude, 0, 1, 0.01, node);
+      this.createParameterControl(controls, 'Attack (s)', 'attack', node.attack || 0.01, 0.001, 2, 0.001, node);
+      this.createParameterControl(controls, 'Decay (s)', 'decay', node.decay || 0.1, 0.001, 2, 0.001, node);
+      this.createParameterControl(controls, 'Sustain', 'sustain', node.sustain || 0.7, 0, 1, 0.01, node);
+      this.createParameterControl(controls, 'Release (s)', 'release', node.release || 0.3, 0.001, 5, 0.001, node);
     }
     
     panel.style.display = 'block';
@@ -356,7 +387,6 @@ class NodeGraph {
           }
         });
         window.__JUCE__.backend.emitEvent("messageFromJS", message);
-        console.log('Updated connection amount:', newValue);
       }
     };
     
@@ -420,7 +450,6 @@ class NodeGraph {
           }
         });
         window.__JUCE__.backend.emitEvent("messageFromJS", message);
-        console.log('Updated parameter:', paramName, '=', newValue);
       }
     };
     
@@ -475,7 +504,7 @@ class Node {
     return null;
   }
   
-  draw(ctx) {
+  draw(ctx, isHovered = false) {
     // Draw node body
     ctx.fillStyle = '#3a3a3a';
     ctx.fillRect(this.x, this.y, this.width, this.height);
@@ -522,17 +551,14 @@ class Node {
       ctx.textAlign = 'right';
       ctx.fillText(output, this.x + this.width - 10, portY + 4);
     });
+    
+    // Call subclass-specific drawing
+    this.drawParameters(ctx, isHovered);
   }
-}
-
-// Oscillator Node
-class OscillatorNode extends Node {
-  constructor(x, y) {
-    super('Oscillator', x, y);
-    this.inputs = ['FM In'];
-    this.outputs = ['Audio'];
-    this.frequency = 440;
-    this.amplitude = 0.5;
+  
+  // Override in subclasses to draw parameters
+  drawParameters(ctx, isHovered = false) {
+    // No parameters by default
   }
 }
 
@@ -551,6 +577,182 @@ class OperatorNode extends Node {
     this.decay = 0.1;      // 100ms default decay
     this.sustain = 0.7;    // 70% sustain level
     this.release = 0.3;    // 300ms default release
+    
+    // Adjust height to accommodate parameters
+    this.height = 95;
+  }
+  
+  drawParameters(ctx, isHovered = false) {
+    // Draw FM parameters on the node
+    const centerX = this.x + this.width / 2;
+    const paramY = this.y + 55;
+    
+    // Background for parameters
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(this.x + 5, this.y + 40, this.width - 10, 55);
+    
+    // Highlight parameter boxes
+    const ratioBoxY = this.y + 45;
+    const ampBoxY = this.y + 67;
+    
+    // Ratio box background with hover effect
+    ctx.fillStyle = isHovered ? '#3a3a3a' : '#333';
+    ctx.fillRect(this.x + 8, ratioBoxY, this.width - 16, 18);
+    ctx.strokeStyle = isHovered ? '#ff9800' : '#4a90e2';
+    ctx.lineWidth = isHovered ? 2 : 1;
+    ctx.strokeRect(this.x + 8, ratioBoxY, this.width - 16, 18);
+    
+    // Amplitude box background with hover effect
+    ctx.fillStyle = isHovered ? '#3a3a3a' : '#333';
+    ctx.fillRect(this.x + 8, ampBoxY, this.width - 16, 18);
+    ctx.strokeStyle = isHovered ? '#ff9800' : '#4a90e2';
+    ctx.lineWidth = isHovered ? 2 : 1;
+    ctx.strokeRect(this.x + 8, ampBoxY, this.width - 16, 18);
+    
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    
+    // Frequency ratio
+    ctx.fillStyle = '#888';
+    ctx.fillText('Ratio:', this.x + 12, paramY);
+    ctx.fillStyle = '#6ab0f3';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(this.frequencyRatio.toFixed(3), this.x + this.width - 12, paramY);
+    
+    // Amplitude
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#888';
+    ctx.fillText('Amp:', this.x + 12, paramY + 22);
+    ctx.fillStyle = '#6ab0f3';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(this.amplitude.toFixed(3), this.x + this.width - 12, paramY + 22);
+  }
+  
+  // Handle click on parameters
+  onParameterClick(x, y, graph) {
+    // Check if clicking in parameter area (expanded for easier clicking)
+    const paramAreaTop = this.y + 25; // Just below title
+    const paramAreaBottom = this.y + 95; // Bottom of param area
+    const paramAreaLeft = this.x;
+    const paramAreaRight = this.x + this.width;
+    
+    console.log('Parameter click check:', {x, y, paramAreaTop, paramAreaBottom, paramAreaLeft, paramAreaRight});
+    
+    if (y >= paramAreaTop && y <= paramAreaBottom && 
+        x >= paramAreaLeft && x <= paramAreaRight) {
+      
+      console.log('✓ Click is in parameter area!');
+      
+      // Ratio box: y 45-63
+      // Amp box: y 67-85
+      const ratioBoxBottom = this.y + 63;
+      
+      if (y < ratioBoxBottom) {
+        console.log('Editing Ratio');
+        this.showInputOverlay('frequencyRatio', this.frequencyRatio, 0.125, 8, 0.001, this.y + 45);
+      } else {
+        console.log('Editing Amplitude');
+        this.showInputOverlay('amplitude', this.amplitude, 0, 1, 0.01, this.y + 67);
+      }
+      return true;
+    }
+    console.log('✗ Click is outside parameter area');
+    return false;
+  }
+  
+  showInputOverlay(paramName, currentValue, min, max, step, topPosition) {
+    console.log('showInputOverlay called:', {paramName, currentValue, topPosition});
+    
+    // Remove any existing input overlays first
+    const existingOverlay = document.querySelector('.param-input-overlay');
+    if (existingOverlay) {
+      console.log('Removing existing overlay');
+      existingOverlay.remove();
+    }
+    
+    // Create an overlay input element
+    const input = document.createElement('input');
+    input.className = 'param-input-overlay';
+    input.type = 'number';
+    input.min = min;
+    input.max = max;
+    input.step = step;
+    input.value = currentValue;
+    input.style.position = 'absolute';
+    input.style.width = (this.width - 20) + 'px';
+    input.style.height = '18px';
+    input.style.padding = '2px 4px';
+    input.style.fontSize = '11px';
+    input.style.fontFamily = 'monospace';
+    input.style.fontWeight = 'bold';
+    input.style.border = '2px solid #ff9800';
+    input.style.background = '#1a1a1a';
+    input.style.color = '#6ab0f3';
+    input.style.borderRadius = '3px';
+    input.style.zIndex = '10000';
+    input.style.outline = 'none';
+    input.style.boxShadow = '0 0 10px rgba(255, 152, 0, 0.5)';
+    
+    const canvas = document.getElementById('canvas');
+    const canvasRect = canvas.getBoundingClientRect();
+    input.style.left = (canvasRect.left + this.x + 10) + 'px';
+    input.style.top = (canvasRect.top + topPosition) + 'px';
+    
+    console.log('Input positioned at:', input.style.left, input.style.top);
+    
+    document.body.appendChild(input);
+    console.log('Input overlay added to DOM');
+    
+    // Focus after a tiny delay to ensure it's rendered
+    setTimeout(() => {
+      input.focus();
+      input.select();
+      console.log('Input focused and selected');
+    }, 10);
+    
+    const removeInput = () => {
+      if (input.parentNode) {
+        input.parentNode.removeChild(input);
+      }
+    };
+    
+    input.addEventListener('blur', () => {
+      const newValue = parseFloat(input.value);
+      if (!isNaN(newValue) && newValue >= min && newValue <= max) {
+        this[paramName] = newValue;
+        if (paramName === 'frequencyRatio') {
+          this.ratio = newValue;
+        }
+        this.updateParameter(paramName, newValue);
+      }
+      removeInput();
+    });
+    
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        input.blur();
+      } else if (e.key === 'Escape') {
+        removeInput();
+      }
+    });
+  }
+  
+  updateParameter(paramName, value) {
+    if (window.__JUCE__ && window.__JUCE__.backend && this.backendId) {
+      const message = JSON.stringify({
+        type: "UPDATE_NODE_PARAMETER",
+        data: {
+          nodeId: this.backendId,
+          paramName: paramName,
+          value: value
+        }
+      });
+      window.__JUCE__.backend.emitEvent("messageFromJS", message);
+      console.log('Updated parameter:', paramName, '=', value);
+    }
   }
 }
 
@@ -597,10 +799,7 @@ if (window.__JUCE__ && window.__JUCE__.backend) {
       if (nodeData.type === "output") {
         console.log("Creating Output node at (100, 100)");
         node = new OutputNode(100, 100);
-      } else if (nodeData.type === "oscillator") {
-        console.log("Creating Oscillator node at (300, 100)");
-        node = new OscillatorNode(300, 100);
-      } else if (nodeData.type === "operator") {
+      } else if (nodeData.type === "operator" || nodeData.type === "oscillator") {
         console.log("Creating Operator node at (300, 100)");
         node = new OperatorNode(300, 100);
       }
@@ -618,27 +817,34 @@ if (window.__JUCE__ && window.__JUCE__.backend) {
   });
   
   console.log("NODE_ADDED event listener registered");
+  
+  // Listen for GRAPH_CLEARED event from backend
+  window.__JUCE__.backend.addEventListener("GRAPH_CLEARED", function(event) {
+    console.log("Received GRAPH_CLEARED event:", event);
+    
+    try {
+      const data = typeof event === 'string' ? JSON.parse(event) : event;
+      console.log("Parsed data:", data);
+      
+      const nodeData = data.data || data;
+      console.log("Output node data:", nodeData);
+      
+      // Recreate the output node
+      const outputNode = new OutputNode(100, 100);
+      outputNode.backendId = nodeData.id;
+      window.nodeGraph.addNode(outputNode);
+      console.log("Recreated output node (ID:", nodeData.id, ") after graph clear");
+    } catch (e) {
+      console.error("Error handling GRAPH_CLEARED:", e);
+    }
+  });
+  
+  console.log("GRAPH_CLEARED event listener registered");
 } else {
   console.warn("JUCE backend not available!");
 }
 
 // Button event listeners
-document.getElementById('addOscillatorBtn').addEventListener('click', function() {
-  // Send to backend - node will be added when backend confirms
-  if (window.__JUCE__ && window.__JUCE__.backend) {
-    const message = JSON.stringify({
-      type: "ADD_NODE",
-      nodeType: "oscillator",
-      data: {
-        frequency: 440,
-        amplitude: 0.5
-      }
-    });
-    window.__JUCE__.backend.emitEvent("messageFromJS", message);
-    console.log("Sent oscillator request to backend");
-  }
-});
-
 document.getElementById('addOperatorBtn').addEventListener('click', function() {
   // Send to backend - node will be added when backend confirms
   if (window.__JUCE__ && window.__JUCE__.backend) {

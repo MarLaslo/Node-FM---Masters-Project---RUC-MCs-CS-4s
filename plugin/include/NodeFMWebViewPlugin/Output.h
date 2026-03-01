@@ -17,23 +17,14 @@ namespace nodefm_plugin
             outputBuffer.setSize(1, numSamples, false, false, true);
             float* output = outputBuffer.getWritePointer(0);
             
-            // Just pass through the modulation input
-            for (int i = 0; i < numSamples; ++i)
-            {
-                output[i] = modulationInput;
-            }
+            // Just pass through the modulation input (single sample)
+            output[0] = modulationInput;
         }
 
         void reset() override
         {
             modulationInput = 0.0f;
             outputBuffer.clear();
-        }
-
-        void setModulation(float value) override
-        {
-            // Accumulate inputs (in case multiple nodes connect)
-            modulationInput += value;
         }
     };
 }

@@ -70,14 +70,21 @@ namespace nodefm_plugin
             }
             return false;
         }
-
-        float render()
+        
+        void render(float* outputBuffer, int numSamples)
         {
             if (graph && (note > 0 || isEnvelopeActive()))
             {
-                return graph->process();
+                graph->process(outputBuffer, numSamples);
             }
-            return 0.0f;
+            else
+            {
+                // Fill buffer with silence
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    outputBuffer[i] = 0.0f;
+                }
+            }
         }
     };
 }

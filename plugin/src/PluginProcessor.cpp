@@ -223,6 +223,11 @@ namespace nodefm_plugin
     {
         return synth.getOutputNodeID();
     }
+    
+    NodeID AudioPluginAudioProcessor::clearGraph()
+    {
+        return synth.clearGraph();
+    }
 
     //==============================================================================
     bool AudioPluginAudioProcessor::hasEditor() const

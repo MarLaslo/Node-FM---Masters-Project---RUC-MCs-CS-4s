@@ -17,13 +17,15 @@ namespace nodefm_plugin
         void removeConnection(ConnectionID id);
         void updateConnection(NodeID source, NodeID dest, float newAmount);
         DSPNode* getNode(NodeID id);
-        float process();
+        void process(float* outputBuffer, int numSamples);
         void setOutputNode(NodeID id);
         void setSampleRate(float sr);
         void setNoteFrequency(float freq);
         void noteOn();
         void noteOff();
         bool isAnyEnvelopeActive() const;
+        void reset();
+        void clearGraph();
 
     private:
         void updateProcessingOrder(); // Kahn's algorithm for topological sort

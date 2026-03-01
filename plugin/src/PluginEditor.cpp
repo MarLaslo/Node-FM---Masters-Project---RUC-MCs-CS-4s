@@ -158,6 +158,22 @@ namespace nodefm_plugin
                 sendMessageToJS("CONNECTION_UPDATED", data);
             }
         }
+        else if (type == "CLEAR_GRAPH")
+        {
+            DBG("UI Request: Clear graph");
+            
+            // Clear the backend graph and get the new output node ID
+            NodeID newOutputNodeID = processorRef.clearGraph();
+            
+            // Send confirmation back to UI with the new output node
+            juce::var nodeData = new juce::DynamicObject();
+            nodeData.getDynamicObject()->setProperty("id", (int)newOutputNodeID);
+            nodeData.getDynamicObject()->setProperty("type", "output");
+            
+            sendMessageToJS("GRAPH_CLEARED", nodeData);
+            
+            DBG("Graph cleared, new output node ID: " << (int)newOutputNodeID);
+        }
     }
 }
 

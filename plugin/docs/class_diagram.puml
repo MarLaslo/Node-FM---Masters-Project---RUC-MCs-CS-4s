@@ -1,195 +1,260 @@
-@startuml
+@startuml NodeFM Plugin Class Diagram
 
-title Node-Based FM Synthesiser Architecture (Current Implementation)
+!define LIGHTORANGE #FFE5CC
+!define LIGHTBLUE #E1F5FF
+!define LIGHTGREEN #E8F5E9
+!define LIGHTPURPLE #F3E5F5
+
+skinparam class {
+    BackgroundColor LIGHTORANGE
+    ArrowColor #555555
+    BorderColor #999999
+}
 
 package "JUCE Framework" {
-    class AudioProcessor <<JUCE>> {
-        +processBlock()
-        +prepareToPlay()
+    abstract class AudioProcessor {
     }
     
-    class AudioProcessorEditor <<JUCE>> {
-        +resized()
+    abstract class AudioProcessorEditor {
     }
     
-    class WebBrowserComponent <<JUCE>> {
-        +goToURL()
-        +emitEventIfBrowserIsVisible()
-        +getResource()
+    class WebBrowserComponent {
     }
 }
 
-package "UI Layer" {
-    class AudioPluginAudioProcessorEditor {
-        -processorRef : AudioPluginAudioProcessor&
-        -webView : WebBrowserComponent
-        -runJavaScriptButton : TextButton
-        -emitJavaScriptEventButton : TextButton
-        
-        +resized()
-        +getResource(url) : Resource
-    }
-    
-    note right of AudioPluginAudioProcessorEditor
-        Hosts the React UI via WebBrowserComponent
-        Handles bidirectional communication with frontend
-    end note
-}
-
-package "Audio Processing Layer" {
+package "Plugin Core" <<LIGHTBLUE>> {
     class AudioPluginAudioProcessor {
-        -synth : Synth
-        
-        +processBlock(buffer, midiMessages)
-        +prepareToPlay(sampleRate, samplesPerBlock)
-        +handleMIDI(data0, data1, data2)
-        +render(buffer, sampleCount, bufferOffset)
-        +createEditor() : AudioProcessorEditor*
+        - synth : Synth
+        --
+        + prepareToPlay(sampleRate, samplesPerBlock)
+        + processBlock(buffer, midiMessages)
+        + addNode(nodeType, data) : NodeID
+        + addConnection(sourceId, destId, amount)
+        + updateNodeParameter(nodeId, paramName, value)
+        + updateConnectionAmount(sourceId, destId, amount)
+        + clearGraph() : NodeID
+        + getOutputNodeID() : NodeID
+        --
+        - splitBufferByEvents(buffer, midiMessages)
+        - handleMIDI(data0, data1, data2)
+        - render(buffer, sampleCount, bufferOffset)
     }
     
+    class AudioPluginAudioProcessorEditor {
+        - processorRef : AudioPluginAudioProcessor&
+        - webView : WebBrowserComponent
+        --
+        + sendMessageToJS(eventType, data)
+        --
+        - handleMessageFromJS(message)
+        - getResource(url) : Resource
+    }
+}
+
+package "Audio Engine" <<LIGHTGREEN>> {
     class Synth {
-        -sampleRate : float
-        -voice : Voice
-        -graph : shared_ptr<DSPGraph>
-        
-        +allocateResources(sampleRate, samplePerBlock)
-        +deAllocateResources()
-        +reset()
-        +render(outputBuffers, sampleCount)
-        +midiMessage(data0, data1, data2)
-        +handleGraphChange(change)
-        +swapGraph(newGraph)
-        -noteOn(note, velocity)
-        -noteOff(note)
+        - sampleRate : float
+        - voice : Voice
+        --
+        + allocateResources(sampleRate, samplesPerBlock)
+        + deAllocateResources()
+        + reset()
+        + render(outputBuffers, sampleCount)
+        + midiMessage(data0, data1, data2)
+        + addNodeToGraph(nodeType, data) : NodeID
+        + addConnection(sourceId, destId, amount)
+        + updateNodeParameter(nodeId, paramName, value)
+        + updateConnectionAmount(sourceId, destId, amount)
+        + clearGraph() : NodeID
+        + getOutputNodeID() : NodeID
+        --
+        - noteOn(note, velocity)
+        - noteOff(note)
     }
     
     class Voice {
-        +note : int
-        +osc : Oscillator
-        
-        +reset()
-        +render() : float
-    }
-    
-    class Oscillator {
-        +amplitude : float
-        +inc : float
-        +phase : float
-        
-        +reset()
-        +nextSample() : float
+        + note : int
+        + graph : shared_ptr<DSPGraph>
+        + sampleRate : float
+        + outputNodeID : NodeID
+        --
+        + reset()
+        + setSampleRate(sr)
+        + setNoteFrequency(freq)
+        + noteOn()
+        + noteOff()
+        + isEnvelopeActive() : bool
+        + render(outputBuffer, numSamples)
     }
 }
 
-package "DSP Graph System" {
+package "DSP Graph System" <<LIGHTPURPLE>> {
     class DSPGraph {
-        -nodes : Map<NodeID, shared_ptr<DSPNode>>
-        -connections : List<Connection>
-        -processingOrder : List<NodeID>
-        -sampleRate : double
-        
-        +addNode(id, type) : DSPNode*
-        +removeNode(id)
-        +addConnection(src, dst, amount)
-        +removeConnection(src, dst)
-        +computeProcessingOrder() <<Kahn>>
-        +processBlock(midiNote, velocity, numSamples)
-        +getOutput() : float*
-    }
-    
-    class Connection {
-        +sourceNodeID : NodeID
-        +destinationNodeID : NodeID
-        +amount : float
-        
-        +getSource() : DSPNode*
-        +getDestination() : DSPNode*
+        - nodes : map<NodeID, unique_ptr<DSPNode>>
+        - connections : vector<Connection>
+        - nextNodeID : NodeID
+        - nextConnectionID : ConnectionID
+        - outputNodeID : NodeID
+        - processingOrder : vector<NodeID>
+        --
+        + addNode(node) : NodeID
+        + removeNode(id)
+        + addConnection(source, dest, amount) : ConnectionID
+        + removeConnection(id)
+        + updateConnection(source, dest, newAmount)
+        + getNode(id) : DSPNode*
+        + process(outputBuffer, numSamples)
+        + setOutputNode(id)
+        + setSampleRate(sr)
+        + setNoteFrequency(freq)
+        + noteOn()
+        + noteOff()
+        + isAnyEnvelopeActive() : bool
+        + reset()
+        + clearGraph()
+        --
+        - updateProcessingOrder()
     }
     
     abstract class DSPNode {
-        #outputBuffer : vector<float>
-        #nodeID : NodeID
-        
-        +{abstract} process(numSamples)
-        +getOutput() : float*
-        +reset()
+        + nodeId : NodeID
+        # outputBuffer : AudioBuffer<float>
+        # modulationInput : float
+        --
+        + {abstract} process(numSamples)
+        + {abstract} reset()
+        + getOutput() : float*
+        + resetModulation()
+        + addModulation(value)
+        + setModulation(value)
     }
     
-    class OperatorNode {
-        -frequency : float
-        -phase : float
-        -amplitude : float
-        
-        +process(numSamples)
-        +setFrequency(freq)
-        +applyModulation(modBuffer, amount)
+    class Oscillator {
+        + amplitude : float
+        + frequencyRatio : float
+        + baseFrequency : float
+        + phase : float
+        + envelope : ADSR
+        - inc : float
+        - sampleRate : float
+        --
+        + setFrequency(freq)
+        + setFrequencyRatio(ratio)
+        + setSampleRate(sr)
+        + setAmplitude(amp)
+        + noteOn()
+        + noteOff()
+        + setAttack(seconds)
+        + setDecay(seconds)
+        + setSustain(level)
+        + setRelease(seconds)
+        + process(numSamples)
+        + reset()
+        --
+        - updateIncrement()
+        - nextSample() : float
     }
     
-    class OutputNode {
-        -gain : float
-        
-        +process(numSamples)
-        +mixInputs()
+    class Output {
+        --
+        + process(numSamples)
+        + reset()
     }
     
-    class EffectNode {
-        -parameters : Map<string, float>
-        
-        +process(numSamples)
-        +applyEffect()
+    class Connection {
+        + id : ConnectionID
+        + source : NodeID
+        + destination : NodeID
+        + ammount : float
     }
     
-    class GraphChange {
-        +type : ChangeType
-        +nodeID : NodeID
-        +data : variant
+    class ADSR {
+        - attack : float
+        - decay : float
+        - sustain : float
+        - release : float
+        - sampleRate : float
+        - stage : EnvelopeStage
+        - currentLevel : float
+        - multiplier : float
+        --
+        + setSampleRate(sr)
+        + setAttack(seconds)
+        + setDecay(seconds)
+        + setSustain(level)
+        + setRelease(seconds)
+        + noteOn()
+        + noteOff()
+        + reset()
+        + nextSample() : float
+        + isActive() : bool
+        + getStage() : EnvelopeStage
+        --
+        - calculateMultiplier()
     }
     
-    enum ChangeType {
-        ADD_NODE
-        REMOVE_NODE
-        ADD_CONNECTION
-        REMOVE_CONNECTION
-        UPDATE_PARAMETER
+    enum EnvelopeStage {
+        Idle
+        Attack
+        Decay
+        Sustain
+        Release
+    }
+}
+
+package "Types" {
+    class GraphTypes <<typedef>> {
+        NodeID : uint32_t
+        ConnectionID : uint32_t
     }
 }
 
 ' Inheritance relationships
 AudioProcessor <|-- AudioPluginAudioProcessor
 AudioProcessorEditor <|-- AudioPluginAudioProcessorEditor
-DSPNode <|-- OperatorNode
-DSPNode <|-- OutputNode
-DSPNode <|-- EffectNode
+DSPNode <|-- Oscillator
+DSPNode <|-- Output
 
 ' Composition relationships
-AudioPluginAudioProcessorEditor *-- WebBrowserComponent
-AudioPluginAudioProcessorEditor --> AudioPluginAudioProcessor : references
 AudioPluginAudioProcessor *-- Synth
-Synth *-- Voice : legacy
-Synth o-- DSPGraph : new graph-based
-Voice *-- Oscillator
-DSPGraph "1" *-- "*" DSPNode
-DSPGraph "1" *-- "*" Connection
-Connection --> DSPNode : source
-Connection --> DSPNode : destination
-GraphChange --> ChangeType
+AudioPluginAudioProcessorEditor *-- WebBrowserComponent
+AudioPluginAudioProcessorEditor o-- AudioPluginAudioProcessor : references
 
-' Communication flow
-AudioPluginAudioProcessorEditor ..> Synth : sends GraphChange
-Synth ..> DSPGraph : applies changes (thread-safe)
+Synth *-- Voice
+Voice *-- DSPGraph
 
-note bottom of DSPGraph
-    Thread-safe graph swapping:
-    - UI thread sends GraphChange
-    - Synth builds new graph
-    - Audio thread atomically swaps graph pointer
+DSPGraph *-- "0..*" DSPNode : nodes
+DSPGraph *-- "0..*" Connection : connections
+
+Oscillator *-- ADSR : envelope
+ADSR -- EnvelopeStage : uses
+
+' Dependencies
+AudioPluginAudioProcessorEditor ..> Synth : communicates via
+DSPGraph ..> Oscillator : creates
+DSPGraph ..> Output : creates
+Voice ..> Output : creates default
+
+note right of DSPGraph
+  Uses Kahn's algorithm for 
+  topological sorting to determine
+  processing order
 end note
 
-note top of Synth
-    Hybrid approach during migration:
-    - Legacy Voice/Oscillator for simple playback
-    - DSPGraph for node-based synthesis
-    Can gradually migrate to full graph-based approach
+note right of Oscillator
+  Implements FM synthesis with
+  phase modulation and ADSR envelope
+end note
+
+note bottom of AudioPluginAudioProcessorEditor
+  Hosts web UI using JUCE WebBrowserComponent
+  Handles bidirectional communication between
+  JavaScript UI and C++ backend
+end note
+
+note top of Voice
+  Each voice has its own DSP graph
+  allowing independent synthesis chains
 end note
 
 @enduml
