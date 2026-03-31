@@ -1,5 +1,5 @@
 #pragma once
-#include "../GraphTypes.h"
+#include "GraphTypes.h"
 
 namespace nodefm_plugin
 {

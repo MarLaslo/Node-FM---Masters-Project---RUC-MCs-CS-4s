@@ -1,6 +1,6 @@
 #pragma once
 #include <cmath>
-#include "dsp/DSPNode.h"
+#include "../graph/DSPNode.h"
 #include "ADSR.h"
 
 namespace nodefm_plugin

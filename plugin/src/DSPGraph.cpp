@@ -1,5 +1,5 @@
-#include "NodeFMWebViewPlugin/dsp/DSPGraph.h"
-#include "NodeFMWebViewPlugin/Oscillator.h"
+#include "NodeFMWebViewPlugin/graph/DSPGraph.h"
+#include "NodeFMWebViewPlugin/dsp/Oscillator.h"
 #include <queue>
 #include <unordered_set>
 
@@ -11,7 +11,6 @@ namespace nodefm_plugin
         node->nodeId = id;
         nodes[id] = std::move(node);
         
-        // Set first node as output by default
         if (outputNodeID == 0)
         {
             outputNodeID = id;
@@ -233,7 +232,6 @@ namespace nodefm_plugin
             queue.pop();
             processingOrder.push_back(current);
             
-            // For each outgoing connection from current node
             for (const auto& conn : connections)
             {
                 if (conn.source == current)
@@ -251,8 +249,6 @@ namespace nodefm_plugin
             }
         }
         
-        // If we didn't process all nodes, there's a cycle
-        // In that case, just add remaining nodes in any order (fallback)
         if (processingOrder.size() != nodes.size())
         {
             DBG("WARNING: Cycle detected! Processed " << processingOrder.size() << " of " << nodes.size() << " nodes");
@@ -267,7 +263,6 @@ namespace nodefm_plugin
             }
         }
         
-        // Print final processing order
         DBG("Final processing order:");
         for (size_t i = 0; i < processingOrder.size(); ++i)
         {
@@ -275,6 +270,7 @@ namespace nodefm_plugin
         }
         DBG("===========================");
     }    
+    
     void DSPGraph::clearGraph()
     {
         DBG("=== Clearing DSP Graph ===");

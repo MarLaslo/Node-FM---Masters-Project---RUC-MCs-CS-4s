@@ -1,5 +1,5 @@
 #pragma once
-#include "../GraphTypes.h"
+#include "GraphTypes.h"
 #include "DSPNode.h"
 #include "Connection.h"
 #include <unordered_map>

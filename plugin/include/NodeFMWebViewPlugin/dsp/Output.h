@@ -1,5 +1,5 @@
 #pragma once
-#include "dsp/DSPNode.h"
+#include "../graph/DSPNode.h"
 
 namespace nodefm_plugin
 {

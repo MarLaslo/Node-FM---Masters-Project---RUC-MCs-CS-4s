@@ -22,7 +22,7 @@ package "JUCE Framework" {
     }
 }
 
-package "Plugin Core" <<LIGHTBLUE>> {
+package "Plugin Core"  {
     class AudioPluginAudioProcessor {
         - synth : Synth
         --
@@ -51,7 +51,7 @@ package "Plugin Core" <<LIGHTBLUE>> {
     }
 }
 
-package "Audio Engine" <<LIGHTGREEN>> {
+package "Audio Engine"  {
     class Synth {
         - sampleRate : float
         - voice : Voice
@@ -88,7 +88,7 @@ package "Audio Engine" <<LIGHTGREEN>> {
     }
 }
 
-package "DSP Graph System" <<LIGHTPURPLE>> {
+package "DSP Graph System"  {
     class DSPGraph {
         - nodes : map<NodeID, unique_ptr<DSPNode>>
         - connections : vector<Connection>

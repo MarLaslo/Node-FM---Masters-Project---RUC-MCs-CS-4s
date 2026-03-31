@@ -1,7 +1,7 @@
 #include "NodeFMWebViewPlugin/Synth.h"
 #include "NodeFMWebViewPlugin/Utils.h"
-#include "NodeFMWebViewPlugin/Output.h"
-#include "NodeFMWebViewPlugin/GraphTypes.h"
+#include "NodeFMWebViewPlugin/dsp/Output.h"
+#include "NodeFMWebViewPlugin/graph/GraphTypes.h"
 
 nodefm_plugin::Synth::Synth()
 {
