@@ -198,7 +198,7 @@ namespace nodefm_plugin
         synth.addConnection(sourceId, destId, amount);
     }
 
-    void AudioPluginAudioProcessor::updateNodeParameter(NodeID nodeId, const juce::String& paramName, float value)
+    void AudioPluginAudioProcessor::updateNodeParameter(NodeID nodeId, const juce::String &paramName, float value)
     {
         synth.updateNodeParameter(nodeId, paramName, value);
     }
@@ -208,11 +208,11 @@ namespace nodefm_plugin
         synth.updateConnectionAmount(sourceId, destId, amount);
     }
 
-    void AudioPluginAudioProcessor::sendEventToUI(const juce::String& eventType, const juce::var& data)
+    void AudioPluginAudioProcessor::sendEventToUI(const juce::String &eventType, const juce::var &data)
     {
-        if (auto* editor = getActiveEditor())
+        if (auto *editor = getActiveEditor())
         {
-            if (auto* editorCast = dynamic_cast<AudioPluginAudioProcessorEditor*>(editor))
+            if (auto *editorCast = dynamic_cast<AudioPluginAudioProcessorEditor *>(editor))
             {
                 editorCast->sendMessageToJS(eventType, data);
             }
@@ -223,7 +223,12 @@ namespace nodefm_plugin
     {
         return synth.getOutputNodeID();
     }
-    
+
+    NodeID AudioPluginAudioProcessor::getOperatorNodeID() const
+    {
+        return synth.getOperatorNodeID();
+    }
+
     NodeID AudioPluginAudioProcessor::clearGraph()
     {
         return synth.clearGraph();

@@ -65,14 +65,25 @@ namespace nodefm_plugin
         juce::Timer::callAfterDelay(500, [this]()
         {
             NodeID outputNodeID = processorRef.getOutputNodeID();
+            NodeID operatorNodeID = processorRef.getOperatorNodeID();
             
-            juce::var nodeData = new juce::DynamicObject();
-            nodeData.getDynamicObject()->setProperty("id", (int)outputNodeID);
-            nodeData.getDynamicObject()->setProperty("type", "output");
+            juce::var outputNodeData = new juce::DynamicObject();
+            outputNodeData.getDynamicObject()->setProperty("id", (int)outputNodeID);
+            outputNodeData.getDynamicObject()->setProperty("type", "output");
+            sendMessageToJS("NODE_ADDED", outputNodeData);
             
-            sendMessageToJS("NODE_ADDED", nodeData);
+            juce::var operatorNodeData = new juce::DynamicObject();
+            operatorNodeData.getDynamicObject()->setProperty("id", (int)operatorNodeID);
+            operatorNodeData.getDynamicObject()->setProperty("type", "operator");
+            sendMessageToJS("NODE_ADDED", operatorNodeData);
+
+            juce::var connectionData = new juce::DynamicObject();
+            connectionData.getDynamicObject()->setProperty("sourceNodeId", (int)operatorNodeID);
+            connectionData.getDynamicObject()->setProperty("destNodeId", (int)outputNodeID);
+            connectionData.getDynamicObject()->setProperty("amount", 1.0f);
+            sendMessageToJS("CONNECTION_ADDED", connectionData);
             
-            DBG("Sent NODE_ADDED event for output node with ID: " << (int)outputNodeID);
+            DBG("Sent default graph to UI: operator " << (int)operatorNodeID << " -> output " << (int)outputNodeID);
         });
     }
 
@@ -164,13 +175,26 @@ namespace nodefm_plugin
             
             // Clear the backend graph and get the new output node ID
             NodeID newOutputNodeID = processorRef.clearGraph();
+            NodeID newOperatorNodeID = processorRef.getOperatorNodeID();
             
             // Send confirmation back to UI with the new output node
-            juce::var nodeData = new juce::DynamicObject();
-            nodeData.getDynamicObject()->setProperty("id", (int)newOutputNodeID);
-            nodeData.getDynamicObject()->setProperty("type", "output");
+            juce::var outputNodeData = new juce::DynamicObject();
+            outputNodeData.getDynamicObject()->setProperty("id", (int)newOutputNodeID);
+            outputNodeData.getDynamicObject()->setProperty("type", "output");
+            sendMessageToJS("NODE_ADDED", outputNodeData);
+
+            juce::var operatorNodeData = new juce::DynamicObject();
+            operatorNodeData.getDynamicObject()->setProperty("id", (int)newOperatorNodeID);
+            operatorNodeData.getDynamicObject()->setProperty("type", "operator");
+            sendMessageToJS("NODE_ADDED", operatorNodeData);
+
+            juce::var connectionData = new juce::DynamicObject();
+            connectionData.getDynamicObject()->setProperty("sourceNodeId", (int)newOperatorNodeID);
+            connectionData.getDynamicObject()->setProperty("destNodeId", (int)newOutputNodeID);
+            connectionData.getDynamicObject()->setProperty("amount", 1.0f);
+            sendMessageToJS("CONNECTION_ADDED", connectionData);
             
-            sendMessageToJS("GRAPH_CLEARED", nodeData);
+            sendMessageToJS("GRAPH_CLEARED", outputNodeData);
             
             DBG("Graph cleared, new output node ID: " << (int)newOutputNodeID);
         }

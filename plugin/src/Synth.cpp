@@ -275,6 +275,11 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::getOutputNodeID() const
     return voice.outputNodeID;
 }
 
+nodefm_plugin::NodeID nodefm_plugin::Synth::getOperatorNodeID() const
+{
+    return voice.operatorNodeID;
+}
+
 nodefm_plugin::NodeID nodefm_plugin::Synth::clearGraph()
 {
     DBG("Synth: Clearing graph");
@@ -288,6 +293,17 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::clearGraph()
         auto outputNode = std::make_unique<Output>();
         voice.outputNodeID = voice.graph->addNode(std::move(outputNode));
         voice.graph->setOutputNode(voice.outputNodeID);
+
+        auto operatorNode = std::make_unique<Oscillator>();
+        operatorNode->setSampleRate(sampleRate);
+        operatorNode->setFrequencyRatio(1.0f);
+        operatorNode->setAmplitude(0.5f);
+        operatorNode->setAttack(0.01f);
+        operatorNode->setDecay(0.1f);
+        operatorNode->setSustain(0.7f);
+        operatorNode->setRelease(0.3f);
+        voice.operatorNodeID = voice.graph->addNode(std::move(operatorNode));
+        voice.graph->addConnection(voice.operatorNodeID, voice.outputNodeID, 1.0f);
         
         DBG("Synth: Graph cleared, new output node ID: " << (int)voice.outputNodeID);
     }

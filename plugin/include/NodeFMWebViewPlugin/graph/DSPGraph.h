@@ -2,6 +2,7 @@
 #include "GraphTypes.h"
 #include "DSPNode.h"
 #include "Connection.h"
+#include <juce_core/juce_core.h>
 #include <unordered_map>
 #include <vector>
 #include <memory>
@@ -26,6 +27,8 @@ namespace nodefm_plugin
         bool isAnyEnvelopeActive() const;
         void reset();
         void clearGraph();
+        juce::XmlElement createStateXml() const;
+        bool loadStateXml(const juce::XmlElement& state, NodeID& outputNodeId, NodeID& operatorNodeId);
 
     private:
         void updateProcessingOrder(); // Kahn's algorithm for topological sort

@@ -12,11 +12,14 @@ class NodeGraph {
     this.selectedNode = null;
     this.dragOffset = { x: 0, y: 0 };
     this.isDragging = false;
+    this.isAdjustingKnob = false;
+    this.adjustingKnob = null;
     this.isConnecting = false;
     this.connectionStart = null;
     this.selectedConnection = null;
     this.mousePos = { x: 0, y: 0 };
     this.hoveredParamNode = null; // Track which node's params are hovered
+    this.hoveredKnob = null;
     
     this.setupCanvas();
     this.setupEventListeners();
@@ -131,18 +134,24 @@ class NodeGraph {
   onMouseMove(e) {
     const pos = this.getMousePos(e);
     this.mousePos = pos;
+
+    if (this.isAdjustingKnob && this.adjustingKnob) {
+      this.updateKnobAdjustment(pos.y);
+      return;
+    }
     
     // Update cursor and hover state based on what's under the mouse
     let cursorStyle = 'default';
     this.hoveredParamNode = null;
     
-    // Check if hovering over a parameter area
+    // Check if hovering over an operator knob
     for (let node of this.nodes) {
       if (node instanceof OperatorNode) {
-        if (pos.y >= node.y + 25 && pos.y <= node.y + 95 && 
-            pos.x >= node.x && pos.x <= node.x + node.width) {
+        const knob = node.getKnobAt(pos.x, pos.y);
+        if (knob) {
           cursorStyle = 'pointer';
           this.hoveredParamNode = node;
+          this.hoveredKnob = { node, paramName: knob.paramName };
           break;
         }
       }
@@ -157,6 +166,12 @@ class NodeGraph {
   }
   
   onMouseUp(e) {
+    if (this.isAdjustingKnob) {
+      this.isAdjustingKnob = false;
+      this.adjustingKnob = null;
+      return;
+    }
+
     if (this.isConnecting) {
       const pos = this.getMousePos(e);
       
@@ -203,6 +218,65 @@ class NodeGraph {
   addNode(node) {
     this.nodes.push(node);
   }
+
+  findNodeByBackendId(backendId) {
+    return this.nodes.find(node => node.backendId === backendId) || null;
+  }
+
+  addConnectionFromBackend(sourceNodeId, destNodeId, amount) {
+    const fromNode = this.findNodeByBackendId(sourceNodeId);
+    const toNode = this.findNodeByBackendId(destNodeId);
+
+    if (!fromNode || !toNode) {
+      return false;
+    }
+
+    this.connections.push({
+      fromNode,
+      fromPort: 0,
+      toNode,
+      toPort: 0,
+      amount
+    });
+
+    return true;
+  }
+
+  beginKnobAdjustment(node, knob, mouseY) {
+    this.isAdjustingKnob = true;
+    this.adjustingKnob = {
+      node,
+      paramName: knob.paramName,
+      min: knob.min,
+      max: knob.max,
+      sensitivity: knob.sensitivity,
+      startY: mouseY,
+      startValue: node[knob.paramName]
+    };
+  }
+
+  updateKnobAdjustment(mouseY) {
+    if (!this.adjustingKnob) {
+      return;
+    }
+
+    const delta = this.adjustingKnob.startY - mouseY;
+    const range = this.adjustingKnob.max - this.adjustingKnob.min;
+    const normalizedDelta = (delta / this.adjustingKnob.sensitivity) * range;
+
+    const newValue = Math.max(
+      this.adjustingKnob.min,
+      Math.min(this.adjustingKnob.max, this.adjustingKnob.startValue + normalizedDelta)
+    );
+
+    const node = this.adjustingKnob.node;
+    const paramName = this.adjustingKnob.paramName;
+    node[paramName] = newValue;
+    if (paramName === 'frequencyRatio') {
+      node.ratio = newValue;
+    }
+    node.updateParameter(paramName, newValue);
+  }
   
   clear() {
     // Clear frontend state
@@ -247,7 +321,10 @@ class NodeGraph {
     // Draw all nodes
     this.nodes.forEach(node => {
       if (node instanceof OperatorNode) {
-        node.draw(this.ctx, node === this.hoveredParamNode);
+        const hoveredKnobName = this.hoveredKnob && this.hoveredKnob.node === node
+          ? this.hoveredKnob.paramName
+          : null;
+        node.draw(this.ctx, hoveredKnobName);
       } else {
         node.draw(this.ctx);
       }
@@ -313,15 +390,31 @@ class NodeGraph {
     
     // Only show ADSR for operators
     if (node instanceof OperatorNode) {
-      // ADSR Envelope section
       const adsrSection = document.createElement('div');
       adsrSection.innerHTML = '<h3>ADSR Envelope</h3>';
       controls.appendChild(adsrSection);
-      
-      this.createParameterControl(controls, 'Attack (s)', 'attack', node.attack || 0.01, 0.001, 2, 0.001, node);
-      this.createParameterControl(controls, 'Decay (s)', 'decay', node.decay || 0.1, 0.001, 2, 0.001, node);
-      this.createParameterControl(controls, 'Sustain', 'sustain', node.sustain || 0.7, 0, 1, 0.01, node);
-      this.createParameterControl(controls, 'Release (s)', 'release', node.release || 0.3, 0.001, 5, 0.001, node);
+
+      const envelopeWrap = document.createElement('div');
+      envelopeWrap.className = 'adsr-envelope-wrap';
+      const envelopeCanvas = document.createElement('canvas');
+      envelopeCanvas.className = 'adsr-envelope';
+      envelopeWrap.appendChild(envelopeCanvas);
+      controls.appendChild(envelopeWrap);
+
+      const knobGrid = document.createElement('div');
+      knobGrid.className = 'adsr-knob-grid';
+      controls.appendChild(knobGrid);
+
+      const redrawEnvelope = () => {
+        this.drawAdsrEnvelope(envelopeCanvas, node);
+      };
+
+      this.createKnobParameterControl(knobGrid, 'Attack', 'attack', node.attack || 0.01, 0.001, 2, 3, node, redrawEnvelope);
+      this.createKnobParameterControl(knobGrid, 'Decay', 'decay', node.decay || 0.1, 0.001, 2, 3, node, redrawEnvelope);
+      this.createKnobParameterControl(knobGrid, 'Sustain', 'sustain', node.sustain || 0.7, 0, 1, 3, node, redrawEnvelope);
+      this.createKnobParameterControl(knobGrid, 'Release', 'release', node.release || 0.3, 0.001, 5, 3, node, redrawEnvelope);
+
+      redrawEnvelope();
     }
     
     panel.style.display = 'block';
@@ -402,6 +495,164 @@ class NodeGraph {
   hideParameterPanel() {
     const panel = document.getElementById('paramPanel');
     panel.style.display = 'none';
+  }
+
+  drawAdsrEnvelope(canvas, node) {
+    const width = Math.max(100, canvas.clientWidth || 360);
+    const height = Math.max(80, canvas.clientHeight || 120);
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    const ctx = canvas.getContext('2d');
+    const pad = 12;
+    const graphWidth = width - pad * 2;
+    const graphHeight = height - pad * 2;
+    const baseY = pad + graphHeight;
+    const topY = pad;
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = '#181818';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.strokeStyle = '#2b2b2b';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = pad + (i / 4) * graphHeight;
+      ctx.beginPath();
+      ctx.moveTo(pad, y);
+      ctx.lineTo(width - pad, y);
+      ctx.stroke();
+    }
+
+    const attack = Math.max(0.001, node.attack || 0.01);
+    const decay = Math.max(0.001, node.decay || 0.1);
+    const release = Math.max(0.001, node.release || 0.3);
+    const sustainRaw = Number.isFinite(node.sustain) ? node.sustain : 0.7;
+    const sustain = Math.max(0, Math.min(1, sustainRaw));
+    const phaseTotal = attack + decay + release;
+    const hold = Math.max(0.15, phaseTotal * 0.5);
+    const total = phaseTotal + hold;
+
+    const x = (t) => pad + (t / total) * graphWidth;
+    const sustainY = baseY - (sustain * graphHeight);
+    const sustainLineY = sustain <= 0 ? baseY : sustainY;
+
+    ctx.strokeStyle = '#6ab0f3';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x(0), baseY);
+    ctx.lineTo(x(attack), topY);
+    ctx.lineTo(x(attack + decay), sustainLineY);
+    ctx.lineTo(x(attack + decay + hold), sustainLineY);
+    ctx.lineTo(x(total), baseY);
+    ctx.stroke();
+
+    if (sustain <= 0) {
+      ctx.strokeStyle = '#3f6f9f';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x(attack + decay), baseY);
+      ctx.lineTo(x(attack + decay + hold), baseY);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = '#8c8c8c';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`A ${attack.toFixed(3)}s`, x(attack) - 10, height - 3);
+    ctx.fillText(`D ${decay.toFixed(3)}s`, x(attack + decay) - 10, height - 3);
+    ctx.fillText(`S ${(sustain * 100).toFixed(0)}%`, x(attack + decay + hold) - 10, height - 3);
+    ctx.fillText(`R ${release.toFixed(3)}s`, x(total) - 10, height - 3);
+
+    ctx.fillStyle = '#bdbdbd';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(
+      `Attack ${attack.toFixed(3)}s  Decay ${decay.toFixed(3)}s  Sustain ${(sustain * 100).toFixed(0)}%  Release ${release.toFixed(3)}s`,
+      width - pad,
+      12
+    );
+  }
+
+  createKnobParameterControl(container, label, paramName, value, min, max, precision, node, onChange) {
+    const control = document.createElement('div');
+    control.className = 'adsr-knob-control';
+
+    const knob = document.createElement('div');
+    knob.className = 'adsr-knob';
+    const indicator = document.createElement('div');
+    indicator.className = 'adsr-knob-indicator';
+    knob.appendChild(indicator);
+
+    const labelElem = document.createElement('div');
+    labelElem.className = 'adsr-knob-label';
+    labelElem.textContent = label;
+
+    const valueElem = document.createElement('div');
+    valueElem.className = 'adsr-knob-value';
+
+    let currentValue = value;
+    const toNumber = (v) => Math.max(min, Math.min(max, v));
+    const normalizedAngle = (v) => {
+      const normalized = (v - min) / (max - min);
+      return -135 + normalized * 270;
+    };
+
+    const commitValue = (newValue) => {
+      currentValue = toNumber(newValue);
+      node[paramName] = currentValue;
+      valueElem.textContent = currentValue.toFixed(precision);
+      knob.style.setProperty('--knob-angle', `${normalizedAngle(currentValue)}deg`);
+      this.emitNodeParameterUpdate(node, paramName, currentValue);
+      if (typeof onChange === 'function') {
+        onChange();
+      }
+    };
+
+    commitValue(currentValue);
+
+    knob.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      const startY = event.clientY;
+      const startValue = currentValue;
+      const range = max - min;
+      const sensitivity = paramName === 'sustain' ? 180 : 260;
+
+      const handleMove = (moveEvent) => {
+        const deltaY = startY - moveEvent.clientY;
+        const nextValue = startValue + (deltaY / sensitivity) * range;
+        commitValue(nextValue);
+      };
+
+      const handleUp = () => {
+        document.removeEventListener('mousemove', handleMove);
+        document.removeEventListener('mouseup', handleUp);
+      };
+
+      document.addEventListener('mousemove', handleMove);
+      document.addEventListener('mouseup', handleUp);
+    });
+
+    control.appendChild(knob);
+    control.appendChild(labelElem);
+    control.appendChild(valueElem);
+    container.appendChild(control);
+  }
+
+  emitNodeParameterUpdate(node, paramName, value) {
+    if (window.__JUCE__ && window.__JUCE__.backend && node.backendId) {
+      const message = JSON.stringify({
+        type: "UPDATE_NODE_PARAMETER",
+        data: {
+          nodeId: node.backendId,
+          paramName: paramName,
+          value: value
+        }
+      });
+      window.__JUCE__.backend.emitEvent("messageFromJS", message);
+    }
   }
   
   createParameterControl(container, label, paramName, value, min, max, step, node) {
@@ -582,162 +833,115 @@ class OperatorNode extends Node {
     this.height = 95;
   }
   
-  drawParameters(ctx, isHovered = false) {
-    // Draw FM parameters on the node
-    const centerX = this.x + this.width / 2;
-    const paramY = this.y + 55;
-    
-    // Background for parameters
+  getKnobs() {
+    const knobY = this.y + 68;
+    return [
+      {
+        paramName: 'frequencyRatio',
+        label: 'Ratio',
+        value: this.frequencyRatio,
+        min: 0.125,
+        max: 8,
+        sensitivity: 180,
+        x: this.x + 48,
+        y: knobY,
+        radius: 12
+      },
+      {
+        paramName: 'amplitude',
+        label: 'Amp',
+        value: this.amplitude,
+        min: 0,
+        max: 1,
+        sensitivity: 140,
+        x: this.x + 112,
+        y: knobY,
+        radius: 12
+      }
+    ];
+  }
+
+  getKnobAt(x, y) {
+    for (const knob of this.getKnobs()) {
+      const dx = x - knob.x;
+      const dy = y - knob.y;
+      if (Math.sqrt(dx * dx + dy * dy) <= knob.radius + 3) {
+        return knob;
+      }
+    }
+    return null;
+  }
+
+  drawKnob(ctx, knob, isHovered) {
+    const normalized = (knob.value - knob.min) / (knob.max - knob.min);
+    const startAngle = Math.PI * 0.75;
+    const sweep = Math.PI * 1.5;
+    const valueAngle = startAngle + normalized * sweep;
+
+    // Knob body
+    ctx.beginPath();
+    ctx.arc(knob.x, knob.y, knob.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#2f2f2f';
+    ctx.fill();
+    ctx.strokeStyle = isHovered ? '#ff9800' : '#4a90e2';
+    ctx.lineWidth = isHovered ? 2 : 1;
+    ctx.stroke();
+
+    // Sweep track
+    ctx.beginPath();
+    ctx.arc(knob.x, knob.y, knob.radius + 3, startAngle, startAngle + sweep);
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Active value arc
+    ctx.beginPath();
+    ctx.arc(knob.x, knob.y, knob.radius + 3, startAngle, valueAngle);
+    ctx.strokeStyle = '#6ab0f3';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Pointer line
+    const pointerLen = knob.radius - 4;
+    ctx.beginPath();
+    ctx.moveTo(knob.x, knob.y);
+    ctx.lineTo(
+      knob.x + Math.cos(valueAngle) * pointerLen,
+      knob.y + Math.sin(valueAngle) * pointerLen
+    );
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Label and value
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(knob.label, knob.x, knob.y - knob.radius - 7);
+
+    ctx.fillStyle = '#6ab0f3';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(knob.value.toFixed(3), knob.x, knob.y + knob.radius + 12);
+  }
+
+  drawParameters(ctx, hoveredKnobName = null) {
+    // Draw background plate for knobs
     ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(this.x + 5, this.y + 40, this.width - 10, 55);
-    
-    // Highlight parameter boxes
-    const ratioBoxY = this.y + 45;
-    const ampBoxY = this.y + 67;
-    
-    // Ratio box background with hover effect
-    ctx.fillStyle = isHovered ? '#3a3a3a' : '#333';
-    ctx.fillRect(this.x + 8, ratioBoxY, this.width - 16, 18);
-    ctx.strokeStyle = isHovered ? '#ff9800' : '#4a90e2';
-    ctx.lineWidth = isHovered ? 2 : 1;
-    ctx.strokeRect(this.x + 8, ratioBoxY, this.width - 16, 18);
-    
-    // Amplitude box background with hover effect
-    ctx.fillStyle = isHovered ? '#3a3a3a' : '#333';
-    ctx.fillRect(this.x + 8, ampBoxY, this.width - 16, 18);
-    ctx.strokeStyle = isHovered ? '#ff9800' : '#4a90e2';
-    ctx.lineWidth = isHovered ? 2 : 1;
-    ctx.strokeRect(this.x + 8, ampBoxY, this.width - 16, 18);
-    
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'left';
-    
-    // Frequency ratio
-    ctx.fillStyle = '#888';
-    ctx.fillText('Ratio:', this.x + 12, paramY);
-    ctx.fillStyle = '#6ab0f3';
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(this.frequencyRatio.toFixed(3), this.x + this.width - 12, paramY);
-    
-    // Amplitude
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#888';
-    ctx.fillText('Amp:', this.x + 12, paramY + 22);
-    ctx.fillStyle = '#6ab0f3';
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(this.amplitude.toFixed(3), this.x + this.width - 12, paramY + 22);
+    ctx.fillRect(this.x + 5, this.y + 40, this.width - 10, 50);
+
+    for (const knob of this.getKnobs()) {
+      this.drawKnob(ctx, knob, hoveredKnobName === knob.paramName);
+    }
   }
   
   // Handle click on parameters
   onParameterClick(x, y, graph) {
-    // Check if clicking in parameter area (expanded for easier clicking)
-    const paramAreaTop = this.y + 25; // Just below title
-    const paramAreaBottom = this.y + 95; // Bottom of param area
-    const paramAreaLeft = this.x;
-    const paramAreaRight = this.x + this.width;
-    
-    console.log('Parameter click check:', {x, y, paramAreaTop, paramAreaBottom, paramAreaLeft, paramAreaRight});
-    
-    if (y >= paramAreaTop && y <= paramAreaBottom && 
-        x >= paramAreaLeft && x <= paramAreaRight) {
-      
-      console.log('✓ Click is in parameter area!');
-      
-      // Ratio box: y 45-63
-      // Amp box: y 67-85
-      const ratioBoxBottom = this.y + 63;
-      
-      if (y < ratioBoxBottom) {
-        console.log('Editing Ratio');
-        this.showInputOverlay('frequencyRatio', this.frequencyRatio, 0.125, 8, 0.001, this.y + 45);
-      } else {
-        console.log('Editing Amplitude');
-        this.showInputOverlay('amplitude', this.amplitude, 0, 1, 0.01, this.y + 67);
-      }
+    const knob = this.getKnobAt(x, y);
+    if (knob) {
+      graph.beginKnobAdjustment(this, knob, y);
       return true;
     }
-    console.log('✗ Click is outside parameter area');
     return false;
-  }
-  
-  showInputOverlay(paramName, currentValue, min, max, step, topPosition) {
-    console.log('showInputOverlay called:', {paramName, currentValue, topPosition});
-    
-    // Remove any existing input overlays first
-    const existingOverlay = document.querySelector('.param-input-overlay');
-    if (existingOverlay) {
-      console.log('Removing existing overlay');
-      existingOverlay.remove();
-    }
-    
-    // Create an overlay input element
-    const input = document.createElement('input');
-    input.className = 'param-input-overlay';
-    input.type = 'number';
-    input.min = min;
-    input.max = max;
-    input.step = step;
-    input.value = currentValue;
-    input.style.position = 'absolute';
-    input.style.width = (this.width - 20) + 'px';
-    input.style.height = '18px';
-    input.style.padding = '2px 4px';
-    input.style.fontSize = '11px';
-    input.style.fontFamily = 'monospace';
-    input.style.fontWeight = 'bold';
-    input.style.border = '2px solid #ff9800';
-    input.style.background = '#1a1a1a';
-    input.style.color = '#6ab0f3';
-    input.style.borderRadius = '3px';
-    input.style.zIndex = '10000';
-    input.style.outline = 'none';
-    input.style.boxShadow = '0 0 10px rgba(255, 152, 0, 0.5)';
-    
-    const canvas = document.getElementById('canvas');
-    const canvasRect = canvas.getBoundingClientRect();
-    input.style.left = (canvasRect.left + this.x + 10) + 'px';
-    input.style.top = (canvasRect.top + topPosition) + 'px';
-    
-    console.log('Input positioned at:', input.style.left, input.style.top);
-    
-    document.body.appendChild(input);
-    console.log('Input overlay added to DOM');
-    
-    // Focus after a tiny delay to ensure it's rendered
-    setTimeout(() => {
-      input.focus();
-      input.select();
-      console.log('Input focused and selected');
-    }, 10);
-    
-    const removeInput = () => {
-      if (input.parentNode) {
-        input.parentNode.removeChild(input);
-      }
-    };
-    
-    input.addEventListener('blur', () => {
-      const newValue = parseFloat(input.value);
-      if (!isNaN(newValue) && newValue >= min && newValue <= max) {
-        this[paramName] = newValue;
-        if (paramName === 'frequencyRatio') {
-          this.ratio = newValue;
-        }
-        this.updateParameter(paramName, newValue);
-      }
-      removeInput();
-    });
-    
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        input.blur();
-      } else if (e.key === 'Escape') {
-        removeInput();
-      }
-    });
   }
   
   updateParameter(paramName, value) {
@@ -797,15 +1001,27 @@ if (window.__JUCE__ && window.__JUCE__.backend) {
       
       let node;
       if (nodeData.type === "output") {
-        console.log("Creating Output node at (100, 100)");
-        node = new OutputNode(100, 100);
+        console.log("Creating Output node at (420, 100)");
+        node = new OutputNode(420, 100);
       } else if (nodeData.type === "operator" || nodeData.type === "oscillator") {
-        console.log("Creating Operator node at (300, 100)");
-        node = new OperatorNode(300, 100);
+        console.log("Creating Operator node at (140, 100)");
+        node = new OperatorNode(140, 100);
       }
       
       if (node) {
         node.backendId = nodeData.id;
+
+        const params = nodeData.data || {};
+        if (node instanceof OperatorNode) {
+          if (params.frequencyRatio !== undefined) node.frequencyRatio = parseFloat(params.frequencyRatio);
+          if (params.amplitude !== undefined) node.amplitude = parseFloat(params.amplitude);
+          if (params.attack !== undefined) node.attack = parseFloat(params.attack);
+          if (params.decay !== undefined) node.decay = parseFloat(params.decay);
+          if (params.sustain !== undefined) node.sustain = parseFloat(params.sustain);
+          if (params.release !== undefined) node.release = parseFloat(params.release);
+          node.ratio = node.frequencyRatio;
+        }
+
         window.nodeGraph.addNode(node);
         console.log("Added", nodeData.type, "node (ID:", nodeData.id, ") to canvas. Total nodes:", window.nodeGraph.nodes.length);
       } else {
@@ -817,26 +1033,34 @@ if (window.__JUCE__ && window.__JUCE__.backend) {
   });
   
   console.log("NODE_ADDED event listener registered");
+
+  window.__JUCE__.backend.addEventListener("CONNECTION_ADDED", function(event) {
+    console.log("Received CONNECTION_ADDED event:", event);
+
+    try {
+      const data = typeof event === 'string' ? JSON.parse(event) : event;
+      const connectionData = data.data || data;
+
+      const added = window.nodeGraph.addConnectionFromBackend(
+        connectionData.sourceNodeId,
+        connectionData.destNodeId,
+        connectionData.amount ?? 1.0
+      );
+
+      console.log(added
+        ? "Added backend connection to canvas"
+        : "Deferred backend connection because a node was not yet available");
+    } catch (e) {
+      console.error("Error handling CONNECTION_ADDED:", e);
+    }
+  });
+
+  console.log("CONNECTION_ADDED event listener registered");
   
   // Listen for GRAPH_CLEARED event from backend
   window.__JUCE__.backend.addEventListener("GRAPH_CLEARED", function(event) {
     console.log("Received GRAPH_CLEARED event:", event);
-    
-    try {
-      const data = typeof event === 'string' ? JSON.parse(event) : event;
-      console.log("Parsed data:", data);
-      
-      const nodeData = data.data || data;
-      console.log("Output node data:", nodeData);
-      
-      // Recreate the output node
-      const outputNode = new OutputNode(100, 100);
-      outputNode.backendId = nodeData.id;
-      window.nodeGraph.addNode(outputNode);
-      console.log("Recreated output node (ID:", nodeData.id, ") after graph clear");
-    } catch (e) {
-      console.error("Error handling GRAPH_CLEARED:", e);
-    }
+    console.log("Backend graph cleared; waiting for default node sync events.");
   });
   
   console.log("GRAPH_CLEARED event listener registered");

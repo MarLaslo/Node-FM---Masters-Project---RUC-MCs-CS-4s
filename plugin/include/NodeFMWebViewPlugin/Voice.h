@@ -12,14 +12,27 @@ namespace nodefm_plugin
         std::shared_ptr<DSPGraph> graph;
         float sampleRate;
         NodeID outputNodeID;
+        NodeID operatorNodeID;
 
-        Voice() : note(0), sampleRate(44100.0f), outputNodeID(0)
+        Voice() : note(0), sampleRate(44100.0f), outputNodeID(0), operatorNodeID(0)
         {
             graph = std::make_shared<DSPGraph>();
 
             auto outputNode = std::make_unique<Output>();
             outputNodeID = graph->addNode(std::move(outputNode));
             graph->setOutputNode(outputNodeID);
+
+            auto operatorNode = std::make_unique<Oscillator>();
+            operatorNode->setSampleRate(sampleRate);
+            operatorNode->setFrequencyRatio(1.0f);
+            operatorNode->setAmplitude(0.5f);
+            operatorNode->setAttack(0.01f);
+            operatorNode->setDecay(0.1f);
+            operatorNode->setSustain(0.7f);
+            operatorNode->setRelease(0.3f);
+            operatorNodeID = graph->addNode(std::move(operatorNode));
+
+            graph->addConnection(operatorNodeID, outputNodeID, 1.0f);
         }
 
         void reset()

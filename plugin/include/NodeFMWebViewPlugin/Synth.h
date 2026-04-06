@@ -19,6 +19,7 @@ namespace nodefm_plugin
         void updateNodeParameter(NodeID nodeId, const juce::String& paramName, float value);
         void updateConnectionAmount(NodeID sourceId, NodeID destId, float amount);
         NodeID getOutputNodeID() const;
+        NodeID getOperatorNodeID() const;
         NodeID clearGraph();
 
     private:

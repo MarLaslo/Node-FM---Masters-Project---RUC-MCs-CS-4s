@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
 
+if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
+    # Default to Apple Silicon unless explicitly overridden at configure time.
+    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "macOS build architectures" FORCE)
+endif()
+
 project(NodeFMWebView VERSION 0.1.0)
 
 
@@ -9,7 +14,7 @@ juce_add_plugin(${PROJECT_NAME}
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
     PLUGIN_MANUFACTURER_CODE FRAC
-    PLUGIN_CODE NGFM
+    PLUGIN_CODE NDFM
     IS_MIDI_EFFECT FALSE
     FORMATS VST3 AU Standalone
 )

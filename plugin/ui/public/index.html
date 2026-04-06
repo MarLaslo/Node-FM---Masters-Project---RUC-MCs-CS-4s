@@ -39,31 +39,35 @@
       }
       #paramPanel {
         position: absolute;
-        right: 20px;
-        top: 80px;
-        width: 280px;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        width: auto;
+        max-width: 640px;
+        margin: 0 auto;
         background: #2c2c2c;
         border: 1px solid #4a90e2;
         border-radius: 8px;
-        padding: 16px;
+        padding: 10px;
         color: white;
         display: none;
         box-shadow: 0 4px 12px rgba(0,0,0,0.5);
       }
       #paramPanel h4 {
-        margin: 0 0 16px 0;
+        margin: 0 0 8px 0;
         color: #4a90e2;
         border-bottom: 1px solid #444;
-        padding-bottom: 8px;
+        padding-bottom: 5px;
+        font-size: 13px;
       }
       #paramPanel h3 {
-        margin: 20px 0 10px 0;
-        font-size: 14px;
+        margin: 10px 0 6px 0;
+        font-size: 11px;
         color: #6ab0f3;
         text-transform: uppercase;
         letter-spacing: 1px;
         border-bottom: 1px solid #444;
-        padding-bottom: 6px;
+        padding-bottom: 3px;
       }
       #paramPanel h3:first-child {
         margin-top: 0;
@@ -94,6 +98,80 @@
         float: right;
         color: #4a90e2;
         font-weight: bold;
+      }
+      .adsr-envelope-wrap {
+        margin-bottom: 8px;
+        background: #1f1f1f;
+        border: 1px solid #3b3b3b;
+        border-radius: 6px;
+        padding: 5px;
+      }
+      .adsr-envelope {
+        width: 100%;
+        height: 64px;
+        display: block;
+        border-radius: 4px;
+      }
+      .adsr-knob-grid {
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .adsr-knob-control {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-width: 60px;
+        user-select: none;
+      }
+      .adsr-knob {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 2px solid #4a90e2;
+        background: radial-gradient(circle at 30% 25%, #4a4a4a, #222);
+        position: relative;
+        cursor: ns-resize;
+        box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.45);
+      }
+      .adsr-knob:hover {
+        border-color: #ff9800;
+      }
+      .adsr-knob-indicator {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 2px;
+        height: 9px;
+        background: #fff;
+        border-radius: 1px;
+        transform-origin: center 7px;
+        transform: translate(-50%, -50%) rotate(var(--knob-angle, -135deg));
+      }
+      .adsr-knob-label {
+        margin-top: 4px;
+        font-size: 9px;
+        color: #bdbdbd;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+      }
+      .adsr-knob-value {
+        margin-top: 2px;
+        font-size: 10px;
+        color: #6ab0f3;
+        font-weight: bold;
+      }
+      @media (max-width: 760px) {
+        #paramPanel {
+          left: 8px;
+          right: 8px;
+          bottom: 8px;
+          padding: 8px;
+        }
+        .adsr-knob-grid {
+          gap: 8px;
+        }
       }
     </style>
   </head>

@@ -50,6 +50,7 @@ namespace nodefm_plugin
         void updateConnectionAmount(NodeID sourceId, NodeID destId, float amount);
         void sendEventToUI(const juce::String& eventType, const juce::var& data);
         NodeID getOutputNodeID() const;
+        NodeID getOperatorNodeID() const;
         NodeID clearGraph();
 
 
