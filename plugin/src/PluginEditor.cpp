@@ -60,31 +60,39 @@ namespace nodefm_plugin
         webView.goToURL(webView.getResourceProviderRoot());
         setResizable(true, true);
         setSize(800, 600);
-        
-        // Notify UI about the default output node after browser loads
-        juce::Timer::callAfterDelay(500, [this]()
-        {
-            NodeID outputNodeID = processorRef.getOutputNodeID();
-            NodeID operatorNodeID = processorRef.getOperatorNodeID();
-            
-            juce::var outputNodeData = new juce::DynamicObject();
-            outputNodeData.getDynamicObject()->setProperty("id", (int)outputNodeID);
-            outputNodeData.getDynamicObject()->setProperty("type", "output");
-            sendMessageToJS("NODE_ADDED", outputNodeData);
-            
-            juce::var operatorNodeData = new juce::DynamicObject();
-            operatorNodeData.getDynamicObject()->setProperty("id", (int)operatorNodeID);
-            operatorNodeData.getDynamicObject()->setProperty("type", "operator");
-            sendMessageToJS("NODE_ADDED", operatorNodeData);
 
-            juce::var connectionData = new juce::DynamicObject();
-            connectionData.getDynamicObject()->setProperty("sourceNodeId", (int)operatorNodeID);
-            connectionData.getDynamicObject()->setProperty("destNodeId", (int)outputNodeID);
-            connectionData.getDynamicObject()->setProperty("amount", 1.0f);
-            sendMessageToJS("CONNECTION_ADDED", connectionData);
-            
-            DBG("Sent default graph to UI: operator " << (int)operatorNodeID << " -> output " << (int)outputNodeID);
-        });
+        juce::Component::SafePointer<AudioPluginAudioProcessorEditor> safeThis(this);
+        juce::Timer::callAfterDelay(500, [safeThis]()
+                                    {
+                                        if (safeThis == nullptr)
+                                            return;
+
+                                        safeThis->sendInitialGraphToUI();
+                                    });
+    }
+
+    void AudioPluginAudioProcessorEditor::sendInitialGraphToUI()
+    {
+        NodeID outputNodeID = processorRef.getOutputNodeID();
+        NodeID operatorNodeID = processorRef.getOperatorNodeID();
+
+        juce::var outputNodeData = new juce::DynamicObject();
+        outputNodeData.getDynamicObject()->setProperty("id", (int)outputNodeID);
+        outputNodeData.getDynamicObject()->setProperty("type", "output");
+        sendMessageToJS("NODE_ADDED", outputNodeData);
+
+        juce::var operatorNodeData = new juce::DynamicObject();
+        operatorNodeData.getDynamicObject()->setProperty("id", (int)operatorNodeID);
+        operatorNodeData.getDynamicObject()->setProperty("type", "operator");
+        sendMessageToJS("NODE_ADDED", operatorNodeData);
+
+        juce::var connectionData = new juce::DynamicObject();
+        connectionData.getDynamicObject()->setProperty("sourceNodeId", (int)operatorNodeID);
+        connectionData.getDynamicObject()->setProperty("destNodeId", (int)outputNodeID);
+        connectionData.getDynamicObject()->setProperty("amount", 1.0f);
+        sendMessageToJS("CONNECTION_ADDED", connectionData);
+
+        DBG("Sent default graph to UI: operator " << (int)operatorNodeID << " -> output " << (int)outputNodeID);
     }
 
     void AudioPluginAudioProcessorEditor::handleMessageFromJS(const juce::String& message)
@@ -221,11 +229,42 @@ namespace nodefm_plugin
         webView.setBounds(bounds);
     }
 
+    juce::File AudioPluginAudioProcessorEditor::findUIResourceRoot() const
+    {
+        // Prefer resources copied into the bundle, then fall back to source/dev locations.
+        const auto executable = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+        const auto bundleResources = executable.getParentDirectory()
+                                         .getParentDirectory()
+                                         .getChildFile("Resources")
+                                         .getChildFile("ui")
+                                         .getChildFile("public");
+
+        if (bundleResources.isDirectory())
+            return bundleResources;
+
+#if defined(NODEFM_UI_SOURCE_DIR)
+        const auto sourceResources = juce::File{NODEFM_UI_SOURCE_DIR};
+        if (sourceResources.isDirectory())
+            return sourceResources;
+#endif
+
+        const auto workingDirResources = juce::File::getCurrentWorkingDirectory()
+                                             .getChildFile("plugin")
+                                             .getChildFile("ui")
+                                             .getChildFile("public");
+        if (workingDirResources.isDirectory())
+            return workingDirResources;
+
+        return {};
+    }
+
     auto AudioPluginAudioProcessorEditor::getResource(const juce::String &url) -> std::optional<Resource>
     {
         std::cout << url << std::endl;
 
-        static const auto resourceFileRoot = juce::File{R"(/Users/marek/Documents/Developer/Master-Thesis/NodeFMWebView/plugin/ui/public)"};
+        static const auto resourceFileRoot = findUIResourceRoot();
+        if (!resourceFileRoot.isDirectory())
+            return std::nullopt;
 
         const auto resourceToRetrieve = url == "/" ? "index.html" : url.fromFirstOccurrenceOf("/", false, false);
 

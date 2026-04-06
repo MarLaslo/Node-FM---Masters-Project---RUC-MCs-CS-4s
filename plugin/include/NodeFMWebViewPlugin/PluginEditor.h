@@ -16,6 +16,8 @@ namespace nodefm_plugin
     private:
         using Resource = juce::WebBrowserComponent::Resource;
         std::optional<Resource> getResource(const juce::String &url);
+        juce::File findUIResourceRoot() const;
+        void sendInitialGraphToUI();
         // This reference is provided as a quick way for your editor to
         // access the processor object that created it.
         AudioPluginAudioProcessor &processorRef;

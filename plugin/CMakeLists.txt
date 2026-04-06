@@ -7,15 +7,21 @@ endif()
 
 project(NodeFMWebView VERSION 0.1.0)
 
+set(NODEFM_PLUGIN_NAME "NodeFMWebView")
+set(NODEFM_BUNDLE_ID "com.FractalAudio.NodeFMWebView")
+
 
 juce_add_plugin(${PROJECT_NAME}
     COMPANY_NAME "FractalAudio"
+    BUNDLE_ID ${NODEFM_BUNDLE_ID}
+    PRODUCT_NAME ${NODEFM_PLUGIN_NAME}
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
     PLUGIN_MANUFACTURER_CODE FRAC
     PLUGIN_CODE NDFM
     IS_MIDI_EFFECT FALSE
+    VST3_CATEGORIES Instrument|Synth
     FORMATS VST3 AU Standalone
 )
 
@@ -52,6 +58,32 @@ PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
+
+target_compile_definitions(${PROJECT_NAME}
+PRIVATE
+    NODEFM_UI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/ui/public"
+)
+
+if(APPLE)
+    find_program(CODESIGN_EXECUTABLE codesign)
+
+    foreach(fmtTarget IN ITEMS ${PROJECT_NAME}_VST3 ${PROJECT_NAME}_AU ${PROJECT_NAME}_Standalone)
+        if(TARGET ${fmtTarget})
+            add_custom_command(TARGET ${fmtTarget} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${CMAKE_CURRENT_SOURCE_DIR}/ui/public"
+                    "$<TARGET_BUNDLE_CONTENT_DIR:${fmtTarget}>/Resources/ui/public"
+            )
+
+            if(CODESIGN_EXECUTABLE)
+                add_custom_command(TARGET ${fmtTarget} POST_BUILD
+                    COMMAND ${CODESIGN_EXECUTABLE} --force --deep --sign - --timestamp=none
+                        "$<TARGET_BUNDLE_DIR:${fmtTarget}>"
+                )
+            endif()
+        endif()
+    endforeach()
+endif()
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/../libs/juce/modules/juce_gui_extra/native/javascript/"
 DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/ui/public/js/juce/"

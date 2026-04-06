@@ -16,10 +16,10 @@ build-debug: config-debug build
 build-release: config-release build
 
 run-debug:
-	./build/plugin/NodeFMWebView_artefacts/Debug/Standalone/NodeFMWebView.app/Contents/MacOS/NodeFMWebView
+	./build/plugin/NodeFMWebView_artefacts/Debug/Standalone/NodeFMWebView.app/Contents/MacOS/NodeFMWebViewAS
 
 run-release:
-	./build/plugin/NodeFMWebView_artefacts/Release/Standalone/NodeFMWebView.app/Contents/MacOS/NodeFMWebView
+	./build/plugin/NodeFMWebView_artefacts/Release/Standalone/NodeFMWebView.app/Contents/MacOS/NodeFMWebViewAS
 
 run: run-debug
 

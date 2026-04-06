@@ -22,7 +22,7 @@ namespace nodefm_plugin
     //==============================================================================
     const juce::String AudioPluginAudioProcessor::getName() const
     {
-        return "NodeFMWebView";
+        return JucePlugin_Name;
     }
 
     bool AudioPluginAudioProcessor::acceptsMidi() const
