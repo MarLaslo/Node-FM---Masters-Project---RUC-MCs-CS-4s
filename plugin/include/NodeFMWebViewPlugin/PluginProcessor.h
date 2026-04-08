@@ -47,11 +47,13 @@ namespace nodefm_plugin
         NodeID addNode(const juce::String& nodeType, const juce::var& data);
         void addConnection(NodeID sourceId, NodeID destId, float amount);
         void updateNodeParameter(NodeID nodeId, const juce::String& paramName, float value);
+        void updateNodePosition(NodeID nodeId, float x, float y);
         void updateConnectionAmount(NodeID sourceId, NodeID destId, float amount);
         void sendEventToUI(const juce::String& eventType, const juce::var& data);
         NodeID getOutputNodeID() const;
         NodeID getOperatorNodeID() const;
         NodeID clearGraph();
+        juce::var getGraphSnapshotForUI() const;
 
 
     private:

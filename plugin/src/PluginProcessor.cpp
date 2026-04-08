@@ -22,7 +22,7 @@ namespace nodefm_plugin
     //==============================================================================
     const juce::String AudioPluginAudioProcessor::getName() const
     {
-        return JucePlugin_Name;
+        return "NodeFMWebView";
     }
 
     bool AudioPluginAudioProcessor::acceptsMidi() const
@@ -203,6 +203,11 @@ namespace nodefm_plugin
         synth.updateNodeParameter(nodeId, paramName, value);
     }
 
+    void AudioPluginAudioProcessor::updateNodePosition(NodeID nodeId, float x, float y)
+    {
+        synth.updateNodePosition(nodeId, x, y);
+    }
+
     void AudioPluginAudioProcessor::updateConnectionAmount(NodeID sourceId, NodeID destId, float amount)
     {
         synth.updateConnectionAmount(sourceId, destId, amount);
@@ -233,6 +238,11 @@ namespace nodefm_plugin
     {
         return synth.clearGraph();
     }
+    
+    juce::var AudioPluginAudioProcessor::getGraphSnapshotForUI() const
+    {
+        return synth.createGraphSnapshotForUI();
+    }
 
     //==============================================================================
     bool AudioPluginAudioProcessor::hasEditor() const
@@ -248,19 +258,28 @@ namespace nodefm_plugin
     //==============================================================================
     void AudioPluginAudioProcessor::getStateInformation(juce::MemoryBlock &destData)
     {
-        // You should use this method to store your parameters in the memory block.
-        // You could do that either as raw data, or use the XML or ValueTree classes
-        // as intermediaries to make it easy to save and load complex data.
-        juce::ignoreUnused(destData);
+        auto pluginState = std::make_unique<juce::XmlElement>("NODEFM_PLUGIN_STATE");
+        auto graphState = std::make_unique<juce::XmlElement>(synth.createStateXml());
+        pluginState->addChildElement(graphState.release());
+        copyXmlToBinary(*pluginState, destData);
     }
 
     void AudioPluginAudioProcessor::setStateInformation(const void *data, int sizeInBytes)
     {
-        // You should use this method to restore your parameters from this memory block,
-        // whose contents will have been created by the getStateInformation() call.
-        juce::ignoreUnused(data, sizeInBytes);
+        const auto pluginState = getXmlFromBinary(data, sizeInBytes);
+        if (pluginState == nullptr || !pluginState->hasTagName("NODEFM_PLUGIN_STATE"))
+            return;
+
+        if (const auto* graphState = pluginState->getChildByName("DSP_GRAPH_STATE"))
+        {
+            if (synth.loadStateXml(*graphState))
+            {
+                sendEventToUI("GRAPH_STATE_SYNC", synth.createGraphSnapshotForUI());
+            }
+        }
     }
-}
+
+} // namespace nodefm_plugin
 
 //==============================================================================
 // This creates new instances of the plugin..

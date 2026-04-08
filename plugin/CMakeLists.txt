@@ -10,6 +10,13 @@ project(NodeFMWebView VERSION 0.1.0)
 set(NODEFM_PLUGIN_NAME "NodeFMWebView")
 set(NODEFM_BUNDLE_ID "com.FractalAudio.NodeFMWebView")
 
+set(NODEFM_UI_USE_SOURCE_FILES_DEFAULT OFF)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(NODEFM_UI_USE_SOURCE_FILES_DEFAULT ON)
+endif()
+
+option(NODEFM_UI_USE_SOURCE_FILES "Load the UI directly from the source tree instead of bundle resources" ${NODEFM_UI_USE_SOURCE_FILES_DEFAULT})
+
 
 juce_add_plugin(${PROJECT_NAME}
     COMPANY_NAME "FractalAudio"
@@ -62,6 +69,7 @@ PUBLIC
 target_compile_definitions(${PROJECT_NAME}
 PRIVATE
     NODEFM_UI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/ui/public"
+    NODEFM_UI_USE_SOURCE_FILES=$<BOOL:${NODEFM_UI_USE_SOURCE_FILES}>
 )
 
 if(APPLE)

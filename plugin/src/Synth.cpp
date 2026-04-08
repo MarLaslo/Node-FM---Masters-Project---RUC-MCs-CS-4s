@@ -262,6 +262,12 @@ void nodefm_plugin::Synth::updateNodeParameter(NodeID nodeId, const juce::String
     }
 }
 
+void nodefm_plugin::Synth::updateNodePosition(NodeID nodeId, float x, float y)
+{
+    if (voice.graph)
+        voice.graph->setNodePosition(nodeId, x, y);
+}
+
 void nodefm_plugin::Synth::updateConnectionAmount(NodeID sourceId, NodeID destId, float amount)
 {
     if (voice.graph)
@@ -312,4 +318,51 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::clearGraph()
     voice.note = 0;
     
     return voice.outputNodeID;
+}
+
+juce::XmlElement nodefm_plugin::Synth::createStateXml() const
+{
+    auto state = voice.graph->createStateXml();
+    state.setAttribute("outputNodeId", static_cast<int>(voice.outputNodeID));
+    state.setAttribute("operatorNodeId", static_cast<int>(voice.operatorNodeID));
+    return state;
+}
+
+bool nodefm_plugin::Synth::loadStateXml(const juce::XmlElement& state)
+{
+    if (!voice.graph)
+        voice.graph = std::make_shared<DSPGraph>();
+
+    NodeID loadedOutputNodeId = 0;
+    NodeID loadedOperatorNodeId = 0;
+
+    const auto loaded = voice.graph->loadStateXml(state, loadedOutputNodeId, loadedOperatorNodeId);
+    if (!loaded)
+        return false;
+
+    voice.outputNodeID = loadedOutputNodeId;
+    voice.operatorNodeID = loadedOperatorNodeId;
+
+    if (voice.operatorNodeID == 0)
+        voice.operatorNodeID = static_cast<NodeID>(state.getIntAttribute("operatorNodeId", 0));
+
+    voice.setSampleRate(sampleRate);
+    voice.note = 0;
+    return true;
+}
+
+juce::var nodefm_plugin::Synth::createGraphSnapshotForUI() const
+{
+    if (!voice.graph)
+    {
+        juce::var emptySnapshot = new juce::DynamicObject();
+        auto* object = emptySnapshot.getDynamicObject();
+        object->setProperty("nodes", juce::var(juce::Array<juce::var>()));
+        object->setProperty("connections", juce::var(juce::Array<juce::var>()));
+        object->setProperty("outputNodeId", 0);
+        object->setProperty("operatorNodeId", 0);
+        return emptySnapshot;
+    }
+
+    return voice.graph->createSnapshotVar(voice.outputNodeID, voice.operatorNodeID);
 }

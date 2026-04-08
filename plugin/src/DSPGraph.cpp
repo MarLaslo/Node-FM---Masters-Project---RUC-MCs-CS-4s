@@ -1,5 +1,6 @@
 #include "NodeFMWebViewPlugin/graph/DSPGraph.h"
 #include "NodeFMWebViewPlugin/dsp/Oscillator.h"
+#include "NodeFMWebViewPlugin/dsp/Output.h"
 #include <queue>
 #include <unordered_set>
 
@@ -279,6 +280,7 @@ namespace nodefm_plugin
         nodes.clear();
         connections.clear();
         processingOrder.clear();
+        this->nodePositions.clear();
         
         // Reset ID counters
         nextNodeID = 1;
@@ -286,4 +288,236 @@ namespace nodefm_plugin
         outputNodeID = 0;
         
         DBG("Graph cleared successfully");
-    }}
+    }
+
+    void DSPGraph::setNodePosition(NodeID id, float x, float y)
+    {
+        if (nodes.find(id) == nodes.end())
+            return;
+
+        this->nodePositions[id] = {x, y};
+    }
+
+    juce::XmlElement DSPGraph::createStateXml() const
+    {
+        juce::XmlElement state("DSP_GRAPH_STATE");
+        state.setAttribute("outputNodeId", static_cast<int>(outputNodeID));
+        state.setAttribute("nextNodeID", static_cast<int>(nextNodeID));
+        state.setAttribute("nextConnectionID", static_cast<int>(nextConnectionID));
+
+        juce::XmlElement nodesElement("NODES");
+        for (const auto& [id, node] : nodes)
+        {
+            juce::XmlElement nodeElement("NODE");
+            nodeElement.setAttribute("id", static_cast<int>(id));
+
+            if (const auto positionIt = this->nodePositions.find(id); positionIt != this->nodePositions.end())
+            {
+                nodeElement.setAttribute("x", positionIt->second.first);
+                nodeElement.setAttribute("y", positionIt->second.second);
+            }
+
+            if (dynamic_cast<const Output*>(node.get()) != nullptr)
+            {
+                nodeElement.setAttribute("type", "output");
+            }
+            else if (const auto* osc = dynamic_cast<const Oscillator*>(node.get()))
+            {
+                nodeElement.setAttribute("type", "operator");
+                nodeElement.setAttribute("frequencyRatio", osc->frequencyRatio);
+                nodeElement.setAttribute("amplitude", osc->amplitude);
+                nodeElement.setAttribute("attack", osc->envelope.getAttack());
+                nodeElement.setAttribute("decay", osc->envelope.getDecay());
+                nodeElement.setAttribute("sustain", osc->envelope.getSustain());
+                nodeElement.setAttribute("release", osc->envelope.getRelease());
+            }
+            else
+            {
+                nodeElement.setAttribute("type", "unknown");
+            }
+
+            nodesElement.addChildElement(new juce::XmlElement(nodeElement));
+        }
+
+        juce::XmlElement connectionsElement("CONNECTIONS");
+        for (const auto& connection : connections)
+        {
+            juce::XmlElement connectionElement("CONNECTION");
+            connectionElement.setAttribute("id", static_cast<int>(connection.id));
+            connectionElement.setAttribute("source", static_cast<int>(connection.source));
+            connectionElement.setAttribute("destination", static_cast<int>(connection.destination));
+            connectionElement.setAttribute("amount", connection.ammount);
+            connectionsElement.addChildElement(new juce::XmlElement(connectionElement));
+        }
+
+        state.addChildElement(new juce::XmlElement(nodesElement));
+        state.addChildElement(new juce::XmlElement(connectionsElement));
+        return state;
+    }
+
+    bool DSPGraph::loadStateXml(const juce::XmlElement& state, NodeID& outputNodeId, NodeID& operatorNodeId)
+    {
+        if (!state.hasTagName("DSP_GRAPH_STATE"))
+            return false;
+
+        nodes.clear();
+        connections.clear();
+        processingOrder.clear();
+        this->nodePositions.clear();
+
+        outputNodeID = static_cast<NodeID>(state.getIntAttribute("outputNodeId", 0));
+        nextNodeID = static_cast<NodeID>(state.getIntAttribute("nextNodeID", 1));
+        nextConnectionID = static_cast<ConnectionID>(state.getIntAttribute("nextConnectionID", 1));
+        outputNodeId = outputNodeID;
+        operatorNodeId = 0;
+
+        if (const auto* nodesElement = state.getChildByName("NODES"))
+        {
+            for (const auto* nodeElement : nodesElement->getChildWithTagNameIterator("NODE"))
+            {
+                const auto id = static_cast<NodeID>(nodeElement->getIntAttribute("id", 0));
+                if (id == 0)
+                    continue;
+
+                const auto type = nodeElement->getStringAttribute("type").toLowerCase();
+                std::unique_ptr<DSPNode> node;
+
+                if (type == "output")
+                {
+                    node = std::make_unique<Output>();
+                }
+                else if (type == "operator" || type == "oscillator")
+                {
+                    auto osc = std::make_unique<Oscillator>();
+                    osc->setFrequencyRatio(static_cast<float>(nodeElement->getDoubleAttribute("frequencyRatio", 1.0)));
+                    osc->setAmplitude(static_cast<float>(nodeElement->getDoubleAttribute("amplitude", 0.5)));
+                    osc->setAttack(static_cast<float>(nodeElement->getDoubleAttribute("attack", 0.01)));
+                    osc->setDecay(static_cast<float>(nodeElement->getDoubleAttribute("decay", 0.1)));
+                    osc->setSustain(static_cast<float>(nodeElement->getDoubleAttribute("sustain", 0.7)));
+                    osc->setRelease(static_cast<float>(nodeElement->getDoubleAttribute("release", 0.3)));
+                    node = std::move(osc);
+
+                    if (operatorNodeId == 0)
+                        operatorNodeId = id;
+                }
+
+                if (node != nullptr)
+                {
+                    node->nodeId = id;
+                    nodes[id] = std::move(node);
+
+                    if (nodeElement->hasAttribute("x") && nodeElement->hasAttribute("y"))
+                    {
+                        this->nodePositions[id] = {
+                            static_cast<float>(nodeElement->getDoubleAttribute("x", 0.0)),
+                            static_cast<float>(nodeElement->getDoubleAttribute("y", 0.0))
+                        };
+                    }
+                }
+            }
+        }
+
+        if (const auto* connectionsElement = state.getChildByName("CONNECTIONS"))
+        {
+            for (const auto* connectionElement : connectionsElement->getChildWithTagNameIterator("CONNECTION"))
+            {
+                const auto id = static_cast<ConnectionID>(connectionElement->getIntAttribute("id", 0));
+                const auto source = static_cast<NodeID>(connectionElement->getIntAttribute("source", 0));
+                const auto destination = static_cast<NodeID>(connectionElement->getIntAttribute("destination", 0));
+                const auto amount = static_cast<float>(connectionElement->getDoubleAttribute("amount", 1.0));
+
+                if (id == 0 || source == 0 || destination == 0)
+                    continue;
+
+                if (nodes.find(source) != nodes.end() && nodes.find(destination) != nodes.end())
+                    connections.push_back({id, source, destination, amount});
+            }
+        }
+
+        if (outputNodeID == 0 || nodes.find(outputNodeID) == nodes.end())
+        {
+            for (const auto& [id, node] : nodes)
+            {
+                if (dynamic_cast<Output*>(node.get()) != nullptr)
+                {
+                    outputNodeID = id;
+                    outputNodeId = id;
+                    break;
+                }
+            }
+        }
+
+        if (nextNodeID <= nodes.size())
+            nextNodeID = static_cast<NodeID>(nodes.size() + 1);
+
+        if (nextConnectionID <= connections.size())
+            nextConnectionID = static_cast<ConnectionID>(connections.size() + 1);
+
+        updateProcessingOrder();
+        return !nodes.empty();
+    }
+
+    juce::var DSPGraph::createSnapshotVar(NodeID outputNodeId, NodeID operatorNodeId) const
+    {
+        juce::var snapshot = new juce::DynamicObject();
+        juce::Array<juce::var> nodeArray;
+        juce::Array<juce::var> connectionArray;
+
+        for (const auto& [id, node] : nodes)
+        {
+            juce::var nodeVar = new juce::DynamicObject();
+            auto* nodeObject = nodeVar.getDynamicObject();
+            nodeObject->setProperty("id", static_cast<int>(id));
+
+            if (dynamic_cast<const Output*>(node.get()) != nullptr)
+            {
+                nodeObject->setProperty("type", "output");
+            }
+            else if (const auto* osc = dynamic_cast<const Oscillator*>(node.get()))
+            {
+                nodeObject->setProperty("type", "operator");
+
+                juce::var parameterData = new juce::DynamicObject();
+                auto* params = parameterData.getDynamicObject();
+                params->setProperty("frequencyRatio", osc->frequencyRatio);
+                params->setProperty("amplitude", osc->amplitude);
+                params->setProperty("attack", osc->envelope.getAttack());
+                params->setProperty("decay", osc->envelope.getDecay());
+                params->setProperty("sustain", osc->envelope.getSustain());
+                params->setProperty("release", osc->envelope.getRelease());
+                nodeObject->setProperty("data", parameterData);
+            }
+            else
+            {
+                nodeObject->setProperty("type", "unknown");
+            }
+
+            if (const auto positionIt = this->nodePositions.find(id); positionIt != this->nodePositions.end())
+            {
+                juce::var positionVar = new juce::DynamicObject();
+                positionVar.getDynamicObject()->setProperty("x", positionIt->second.first);
+                positionVar.getDynamicObject()->setProperty("y", positionIt->second.second);
+                nodeObject->setProperty("position", positionVar);
+            }
+
+            nodeArray.add(nodeVar);
+        }
+
+        for (const auto& connection : connections)
+        {
+            juce::var connectionVar = new juce::DynamicObject();
+            auto* connectionObject = connectionVar.getDynamicObject();
+            connectionObject->setProperty("sourceNodeId", static_cast<int>(connection.source));
+            connectionObject->setProperty("destNodeId", static_cast<int>(connection.destination));
+            connectionObject->setProperty("amount", connection.ammount);
+            connectionArray.add(connectionVar);
+        }
+
+        auto* snapshotObject = snapshot.getDynamicObject();
+        snapshotObject->setProperty("nodes", juce::var(nodeArray));
+        snapshotObject->setProperty("connections", juce::var(connectionArray));
+        snapshotObject->setProperty("outputNodeId", static_cast<int>(outputNodeId));
+        snapshotObject->setProperty("operatorNodeId", static_cast<int>(operatorNodeId));
+        return snapshot;
+    }
+}

@@ -1,6 +1,10 @@
 #include "NodeFMWebViewPlugin/PluginProcessor.h"
 #include "NodeFMWebViewPlugin/PluginEditor.h"
 
+#ifndef NODEFM_UI_SOURCE_DIR
+#define NODEFM_UI_SOURCE_DIR ""
+#endif
+
 namespace nodefm_plugin
 {
     namespace
@@ -67,32 +71,14 @@ namespace nodefm_plugin
                                         if (safeThis == nullptr)
                                             return;
 
-                                        safeThis->sendInitialGraphToUI();
+                                        safeThis->sendCurrentGraphToUI();
                                     });
     }
 
-    void AudioPluginAudioProcessorEditor::sendInitialGraphToUI()
+    void AudioPluginAudioProcessorEditor::sendCurrentGraphToUI()
     {
-        NodeID outputNodeID = processorRef.getOutputNodeID();
-        NodeID operatorNodeID = processorRef.getOperatorNodeID();
-
-        juce::var outputNodeData = new juce::DynamicObject();
-        outputNodeData.getDynamicObject()->setProperty("id", (int)outputNodeID);
-        outputNodeData.getDynamicObject()->setProperty("type", "output");
-        sendMessageToJS("NODE_ADDED", outputNodeData);
-
-        juce::var operatorNodeData = new juce::DynamicObject();
-        operatorNodeData.getDynamicObject()->setProperty("id", (int)operatorNodeID);
-        operatorNodeData.getDynamicObject()->setProperty("type", "operator");
-        sendMessageToJS("NODE_ADDED", operatorNodeData);
-
-        juce::var connectionData = new juce::DynamicObject();
-        connectionData.getDynamicObject()->setProperty("sourceNodeId", (int)operatorNodeID);
-        connectionData.getDynamicObject()->setProperty("destNodeId", (int)outputNodeID);
-        connectionData.getDynamicObject()->setProperty("amount", 1.0f);
-        sendMessageToJS("CONNECTION_ADDED", connectionData);
-
-        DBG("Sent default graph to UI: operator " << (int)operatorNodeID << " -> output " << (int)outputNodeID);
+        sendMessageToJS("GRAPH_STATE_SYNC", processorRef.getGraphSnapshotForUI());
+        DBG("Sent current graph snapshot to UI");
     }
 
     void AudioPluginAudioProcessorEditor::handleMessageFromJS(const juce::String& message)
@@ -105,10 +91,11 @@ namespace nodefm_plugin
         if (type == "ADD_NODE")
         {
             auto nodeType = obj->getProperty("nodeType").toString();
+            auto requestData = obj->getProperty("data");
             
             DBG("UI Request: Add node of type " << nodeType);
             
-            auto nodeId = processorRef.addNode(nodeType, obj->getProperty("data"));
+            auto nodeId = processorRef.addNode(nodeType, requestData);
             
             DBG("Node created with ID: " << (int)nodeId);
             
@@ -116,7 +103,28 @@ namespace nodefm_plugin
             juce::var nodeData = new juce::DynamicObject();
             nodeData.getDynamicObject()->setProperty("id", (int)nodeId);
             nodeData.getDynamicObject()->setProperty("type", nodeType);
+
+            // Preserve requested UI placement if provided by the frontend.
+            if (auto* requestDataObj = requestData.getDynamicObject())
+            {
+                auto position = requestDataObj->getProperty("position");
+                if (auto* positionObj = position.getDynamicObject())
+                {
+                    const auto x = static_cast<double>(positionObj->getProperty("x"));
+                    const auto y = static_cast<double>(positionObj->getProperty("y"));
+                    juce::var positionData = new juce::DynamicObject();
+                    positionData.getDynamicObject()->setProperty("x", x);
+                    positionData.getDynamicObject()->setProperty("y", y);
+                    nodeData.getDynamicObject()->setProperty("position", positionData);
+                }
+            }
+
             sendMessageToJS("NODE_ADDED", nodeData);
+        }
+        else if (type == "UI_READY")
+        {
+            DBG("UI reported ready, sending current graph snapshot");
+            sendCurrentGraphToUI();
         }
         else if (type == "ADD_CONNECTION")
         {
@@ -158,6 +166,19 @@ namespace nodefm_plugin
                 
                 // Send confirmation back to UI
                 sendMessageToJS("NODE_PARAMETER_UPDATED", data);
+            }
+        }
+        else if (type == "UPDATE_NODE_POSITION")
+        {
+            auto data = obj->getProperty("data");
+            if (auto* dataObj = data.getDynamicObject())
+            {
+                NodeID nodeId = dataObj->getProperty("nodeId").toString().getIntValue();
+                const float x = static_cast<float>(dataObj->getProperty("x"));
+                const float y = static_cast<float>(dataObj->getProperty("y"));
+
+                processorRef.updateNodePosition(nodeId, x, y);
+                DBG("Persisted node position id=" << static_cast<int>(nodeId) << " x=" << x << " y=" << y);
             }
         }
         else if (type == "UPDATE_CONNECTION")
@@ -231,7 +252,13 @@ namespace nodefm_plugin
 
     juce::File AudioPluginAudioProcessorEditor::findUIResourceRoot() const
     {
-        // Prefer resources copied into the bundle, then fall back to source/dev locations.
+        // Prefer the requested UI source tree or bundle resources depending on build mode.
+#if NODEFM_UI_USE_SOURCE_FILES && defined(NODEFM_UI_SOURCE_DIR)
+        const auto sourceResources = juce::File{NODEFM_UI_SOURCE_DIR};
+        if (sourceResources.isDirectory())
+            return sourceResources;
+#endif
+
         const auto executable = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
         const auto bundleResources = executable.getParentDirectory()
                                          .getParentDirectory()
@@ -242,18 +269,18 @@ namespace nodefm_plugin
         if (bundleResources.isDirectory())
             return bundleResources;
 
-#if defined(NODEFM_UI_SOURCE_DIR)
-        const auto sourceResources = juce::File{NODEFM_UI_SOURCE_DIR};
-        if (sourceResources.isDirectory())
-            return sourceResources;
-#endif
-
         const auto workingDirResources = juce::File::getCurrentWorkingDirectory()
                                              .getChildFile("plugin")
                                              .getChildFile("ui")
                                              .getChildFile("public");
         if (workingDirResources.isDirectory())
             return workingDirResources;
+
+#if !NODEFM_UI_USE_SOURCE_FILES && defined(NODEFM_UI_SOURCE_DIR)
+        const auto sourceResources = juce::File{NODEFM_UI_SOURCE_DIR};
+        if (sourceResources.isDirectory())
+            return sourceResources;
+#endif
 
         return {};
     }

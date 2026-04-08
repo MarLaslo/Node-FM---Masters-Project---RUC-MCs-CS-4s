@@ -136,6 +136,11 @@ namespace nodefm_plugin
             return stage;
         }
 
+        float getAttack() const { return attack; }
+        float getDecay() const { return decay; }
+        float getSustain() const { return sustain; }
+        float getRelease() const { return release; }
+
     private:
         float attack;
         float decay;
