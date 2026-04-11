@@ -1,5 +1,8 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_dsp/juce_dsp.h>
+#include <array>
+#include <atomic>
 #include "Synth.h"
 #include "graph/GraphTypes.h"
 
@@ -45,7 +48,9 @@ namespace nodefm_plugin
         void setStateInformation(const void *data, int sizeInBytes) override;
 
         NodeID addNode(const juce::String& nodeType, const juce::var& data);
-        void addConnection(NodeID sourceId, NodeID destId, float amount);
+        bool removeNode(NodeID nodeId);
+        void addConnection(NodeID sourceId, NodeID destId, float amount, ConnectionType type = ConnectionType::modulation);
+        bool removeConnection(NodeID sourceId, NodeID destId, ConnectionType type = ConnectionType::modulation);
         void updateNodeParameter(NodeID nodeId, const juce::String& paramName, float value);
         void updateNodePosition(NodeID nodeId, float x, float y);
         void updateConnectionAmount(NodeID sourceId, NodeID destId, float amount);
@@ -54,13 +59,27 @@ namespace nodefm_plugin
         NodeID getOperatorNodeID() const;
         NodeID clearGraph();
         juce::var getGraphSnapshotForUI() const;
+        juce::var getSpectrumForUI() const;
 
 
     private:
+        static constexpr int fftOrder = 10;
+        static constexpr int fftSize = 1 << fftOrder;
+        static constexpr int spectrumBinCount = 32;
+
         Synth synth;
+        juce::dsp::FFT forwardFFT{fftOrder};
+        juce::dsp::WindowingFunction<float> window{fftSize, juce::dsp::WindowingFunction<float>::hann};
+        std::array<float, fftSize> analyserFifo{};
+        std::array<float, fftSize * 2> analyserFftData{};
+        int analyserFifoIndex = 0;
+        std::array<std::atomic<float>, spectrumBinCount> spectrumBins{};
+
         void splitBufferByEvents(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages);
         void handleMIDI(uint8_t data0, u_int8_t data1, u_int8_t data2);
         void render(juce::AudioBuffer<float> &buffer, int sampleCount, int bufferOffset);
+        void pushNextSampleForAnalyser(float sample) noexcept;
+        void updateAnalyserSpectrum() noexcept;
         //==============================================================================
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)
     };

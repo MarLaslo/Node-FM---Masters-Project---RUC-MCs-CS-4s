@@ -15,8 +15,9 @@ namespace nodefm_plugin
     public:
         NodeID addNode(std::unique_ptr<DSPNode> node);
         void removeNode(NodeID id);
-        ConnectionID addConnection(NodeID source, NodeID dest, float amount);
+        ConnectionID addConnection(NodeID source, NodeID dest, float amount, ConnectionType type = ConnectionType::modulation);
         void removeConnection(ConnectionID id);
+        bool removeConnection(NodeID source, NodeID dest, ConnectionType type = ConnectionType::modulation);
         void updateConnection(NodeID source, NodeID dest, float newAmount);
         DSPNode* getNode(NodeID id);
         void process(float* outputBuffer, int numSamples);

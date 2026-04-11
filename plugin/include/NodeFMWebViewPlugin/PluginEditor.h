@@ -4,7 +4,8 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 namespace nodefm_plugin
 {
-    class AudioPluginAudioProcessorEditor final : public juce::AudioProcessorEditor
+    class AudioPluginAudioProcessorEditor final : public juce::AudioProcessorEditor,
+                                                  private juce::Timer
     {
     public:
         explicit AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor &);
@@ -23,6 +24,7 @@ namespace nodefm_plugin
         AudioPluginAudioProcessor &processorRef;
 
         void handleMessageFromJS(const juce::String& message);
+        void timerCallback() override;
         juce::WebBrowserComponent webView;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)

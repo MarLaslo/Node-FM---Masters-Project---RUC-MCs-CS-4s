@@ -198,13 +198,66 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String& n
     return 0;
 }
 
-void nodefm_plugin::Synth::addConnection(NodeID sourceId, NodeID destId, float amount)
+bool nodefm_plugin::Synth::removeNodeFromGraph(NodeID nodeId)
+{
+    if (!voice.graph || nodeId == 0)
+        return false;
+
+    if (nodeId == voice.outputNodeID)
+    {
+        DBG("Refusing to remove output node " << static_cast<int>(nodeId));
+        return false;
+    }
+
+    if (voice.graph->getNode(nodeId) == nullptr)
+        return false;
+
+    voice.graph->removeNode(nodeId);
+
+    if (voice.operatorNodeID == nodeId)
+    {
+        voice.operatorNodeID = 0;
+        const auto snapshot = voice.graph->createSnapshotVar(voice.outputNodeID, 0);
+        if (const auto* snapshotObj = snapshot.getDynamicObject())
+        {
+            const auto nodesVar = snapshotObj->getProperty("nodes");
+            if (const auto* nodeArray = nodesVar.getArray())
+            {
+                for (const auto& nodeVar : *nodeArray)
+                {
+                    if (const auto* nodeObj = nodeVar.getDynamicObject())
+                    {
+                        const auto type = nodeObj->getProperty("type").toString().toLowerCase();
+                        if (type == "operator" || type == "oscillator")
+                        {
+                            const int replacementOperatorId = nodeObj->getProperty("id").toString().getIntValue();
+                            voice.operatorNodeID = static_cast<NodeID>(replacementOperatorId);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+void nodefm_plugin::Synth::addConnection(NodeID sourceId, NodeID destId, float amount, ConnectionType type)
 {
     if (voice.graph)
     {
-        voice.graph->addConnection(sourceId, destId, amount);
-        DBG("Added connection from node " << (int)sourceId << " to node " << (int)destId);
+        voice.graph->addConnection(sourceId, destId, amount, type);
+        DBG("Added connection from node " << (int)sourceId << " to node " << (int)destId << " type=" << (type == ConnectionType::gain ? "gain" : "modulation"));
     }
+}
+
+bool nodefm_plugin::Synth::removeConnection(NodeID sourceId, NodeID destId, ConnectionType type)
+{
+    if (!voice.graph)
+        return false;
+
+    return voice.graph->removeConnection(sourceId, destId, type);
 }
 
 void nodefm_plugin::Synth::updateNodeParameter(NodeID nodeId, const juce::String& paramName, float value)
@@ -309,7 +362,7 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::clearGraph()
         operatorNode->setSustain(0.7f);
         operatorNode->setRelease(0.3f);
         voice.operatorNodeID = voice.graph->addNode(std::move(operatorNode));
-        voice.graph->addConnection(voice.operatorNodeID, voice.outputNodeID, 1.0f);
+        voice.graph->addConnection(voice.operatorNodeID, voice.outputNodeID, 1.0f, ConnectionType::gain);
         
         DBG("Synth: Graph cleared, new output node ID: " << (int)voice.outputNodeID);
     }

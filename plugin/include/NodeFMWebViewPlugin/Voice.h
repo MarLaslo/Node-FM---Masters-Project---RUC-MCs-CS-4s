@@ -32,7 +32,7 @@ namespace nodefm_plugin
             operatorNode->setRelease(0.3f);
             operatorNodeID = graph->addNode(std::move(operatorNode));
 
-            graph->addConnection(operatorNodeID, outputNodeID, 1.0f);
+            graph->addConnection(operatorNodeID, outputNodeID, 1.0f, ConnectionType::gain);
         }
 
         void reset()

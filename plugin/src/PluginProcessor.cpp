@@ -13,6 +13,8 @@ namespace nodefm_plugin
 #endif
           )
     {
+        for (auto& bin : spectrumBins)
+            bin.store(0.0f);
     }
 
     AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
@@ -88,6 +90,11 @@ namespace nodefm_plugin
     void AudioPluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     {
         synth.allocateResources(sampleRate, samplesPerBlock);
+        analyserFifoIndex = 0;
+        analyserFifo.fill(0.0f);
+        analyserFftData.fill(0.0f);
+        for (auto& bin : spectrumBins)
+            bin.store(0.0f);
         reset();
     }
 
@@ -138,6 +145,14 @@ namespace nodefm_plugin
             buffer.clear(i, 0, buffer.getNumSamples());
 
         splitBufferByEvents(buffer, midiMessages);
+
+        if (buffer.getNumChannels() > 0)
+        {
+            const auto* output = buffer.getReadPointer(0);
+            const int sampleCount = buffer.getNumSamples();
+            for (int i = 0; i < sampleCount; ++i)
+                pushNextSampleForAnalyser(output[i]);
+        }
     }
 
     void AudioPluginAudioProcessor::splitBufferByEvents(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
@@ -193,9 +208,19 @@ namespace nodefm_plugin
         return synth.addNodeToGraph(nodeType, data);
     }
 
-    void AudioPluginAudioProcessor::addConnection(NodeID sourceId, NodeID destId, float amount)
+    bool AudioPluginAudioProcessor::removeNode(NodeID nodeId)
     {
-        synth.addConnection(sourceId, destId, amount);
+        return synth.removeNodeFromGraph(nodeId);
+    }
+
+    void AudioPluginAudioProcessor::addConnection(NodeID sourceId, NodeID destId, float amount, ConnectionType type)
+    {
+        synth.addConnection(sourceId, destId, amount, type);
+    }
+
+    bool AudioPluginAudioProcessor::removeConnection(NodeID sourceId, NodeID destId, ConnectionType type)
+    {
+        return synth.removeConnection(sourceId, destId, type);
     }
 
     void AudioPluginAudioProcessor::updateNodeParameter(NodeID nodeId, const juce::String &paramName, float value)
@@ -242,6 +267,65 @@ namespace nodefm_plugin
     juce::var AudioPluginAudioProcessor::getGraphSnapshotForUI() const
     {
         return synth.createGraphSnapshotForUI();
+    }
+
+    juce::var AudioPluginAudioProcessor::getSpectrumForUI() const
+    {
+        juce::Array<juce::var> bins;
+        bins.ensureStorageAllocated(spectrumBinCount);
+        for (const auto& bin : spectrumBins)
+            bins.add(bin.load());
+
+        return juce::var(bins);
+    }
+
+    void AudioPluginAudioProcessor::pushNextSampleForAnalyser(float sample) noexcept
+    {
+        analyserFifo[analyserFifoIndex++] = sample;
+
+        if (analyserFifoIndex >= fftSize)
+        {
+            analyserFifoIndex = 0;
+            updateAnalyserSpectrum();
+        }
+    }
+
+    void AudioPluginAudioProcessor::updateAnalyserSpectrum() noexcept
+    {
+        for (int i = 0; i < fftSize; ++i)
+            analyserFftData[i] = analyserFifo[(size_t)i];
+
+        for (int i = fftSize; i < fftSize * 2; ++i)
+            analyserFftData[i] = 0.0f;
+
+        window.multiplyWithWindowingTable(analyserFftData.data(), fftSize);
+        forwardFFT.performFrequencyOnlyForwardTransform(analyserFftData.data());
+
+        constexpr float minDb = -90.0f;
+        constexpr float maxDb = 0.0f;
+        constexpr float smoothKeep = 0.82f;
+        constexpr float smoothAdd = 0.18f;
+
+        const int nyquistBin = fftSize / 2;
+
+        for (int i = 0; i < spectrumBinCount; ++i)
+        {
+            const float startNorm = static_cast<float>(i) / static_cast<float>(spectrumBinCount);
+            const float endNorm = static_cast<float>(i + 1) / static_cast<float>(spectrumBinCount);
+
+            int startBin = juce::jlimit(1, nyquistBin - 1, static_cast<int>(std::pow(startNorm, 2.0f) * static_cast<float>(nyquistBin - 1)));
+            int endBin = juce::jlimit(startBin + 1, nyquistBin, static_cast<int>(std::pow(endNorm, 2.0f) * static_cast<float>(nyquistBin)));
+
+            float peak = 0.0f;
+            for (int bin = startBin; bin < endBin; ++bin)
+                peak = juce::jmax(peak, analyserFftData[(size_t)bin]);
+
+            const float db = juce::Decibels::gainToDecibels(peak / static_cast<float>(fftSize), minDb);
+            const float normalized = juce::jlimit(0.0f, 1.0f, juce::jmap(db, minDb, maxDb, 0.0f, 1.0f));
+
+            const float previous = spectrumBins[(size_t)i].load();
+            spectrumBins[(size_t)i].store(previous * smoothKeep + normalized * smoothAdd);
+        }
     }
 
     //==============================================================================

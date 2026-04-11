@@ -27,4 +27,16 @@ document.getElementById('clearGraphBtn').addEventListener('click', () => {
   graph.clear();
 });
 
+document.getElementById('zoomInBtn').addEventListener('click', () => {
+  graph.zoomIn();
+});
+
+document.getElementById('zoomOutBtn').addEventListener('click', () => {
+  graph.zoomOut();
+});
+
+document.getElementById('zoomResetBtn').addEventListener('click', () => {
+  graph.resetZoom();
+});
+
 console.log('NodeFM Frontend initialized');

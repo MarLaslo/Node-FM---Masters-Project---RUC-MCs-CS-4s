@@ -25,9 +25,12 @@ export class BackendBridge {
     }
 
     this.registerNodeAdded();
+    this.registerNodeRemoved();
     this.registerConnectionAdded();
+    this.registerConnectionRemoved();
     this.registerGraphStateSync();
     this.registerGraphCleared();
+    this.registerSpectrumUpdate();
 
     emitToBackend({ type: 'UI_READY' });
   }
@@ -82,10 +85,72 @@ export class BackendBridge {
         this.graph.addConnectionFromBackend(
           connectionData.sourceNodeId,
           connectionData.destNodeId,
-          connectionData.amount ?? 1.0
+          connectionData.amount ?? 1.0,
+          connectionData.connectionType || null
         );
       } catch (error) {
         console.error('Error handling CONNECTION_ADDED:', error);
+      }
+    });
+  }
+
+  registerConnectionRemoved() {
+    window.__JUCE__.backend.addEventListener('CONNECTION_REMOVED', (event) => {
+      try {
+        const payload = parseBackendEvent(event);
+        const data = payload.data || payload;
+        const sourceNodeId = parseInt(data.sourceNodeId, 10);
+        const destNodeId = parseInt(data.destNodeId, 10);
+        const connectionType = data.connectionType || null;
+
+        if (!Number.isFinite(sourceNodeId) || !Number.isFinite(destNodeId)) {
+          return;
+        }
+
+        const conn = this.graph.connections.find((candidate) => {
+          if (!candidate || !candidate.fromNode || !candidate.toNode) {
+            return false;
+          }
+
+          const sameEndpoints = candidate.fromNode.backendId === sourceNodeId
+            && candidate.toNode.backendId === destNodeId;
+          if (!sameEndpoints) {
+            return false;
+          }
+
+          if (!connectionType) {
+            return true;
+          }
+
+          const currentType = candidate.connectionType || this.graph.inferConnectionType(candidate.fromNode, candidate.toNode);
+          return currentType === connectionType;
+        });
+
+        if (conn) {
+          this.graph.removeConnection(conn, false);
+        }
+      } catch (error) {
+        console.error('Error handling CONNECTION_REMOVED:', error);
+      }
+    });
+  }
+
+  registerNodeRemoved() {
+    window.__JUCE__.backend.addEventListener('NODE_REMOVED', (event) => {
+      try {
+        const payload = parseBackendEvent(event);
+        const data = payload.data || payload;
+        const nodeId = parseInt(data.nodeId, 10);
+        if (!Number.isFinite(nodeId)) {
+          return;
+        }
+
+        const node = this.graph.findNodeByBackendId(nodeId);
+        if (node) {
+          this.graph.removeNode(node, false);
+        }
+      } catch (error) {
+        console.error('Error handling NODE_REMOVED:', error);
       }
     });
   }
@@ -105,6 +170,26 @@ export class BackendBridge {
   registerGraphCleared() {
     window.__JUCE__.backend.addEventListener('GRAPH_CLEARED', () => {
       console.log('Backend graph cleared; waiting for default node sync events.');
+    });
+  }
+
+  registerSpectrumUpdate() {
+    window.__JUCE__.backend.addEventListener('SPECTRUM_UPDATE', (event) => {
+      try {
+        const payload = parseBackendEvent(event);
+        const bins = payload.data || payload;
+        if (!Array.isArray(bins)) {
+          return;
+        }
+
+        for (const node of this.graph.nodes) {
+          if (node && node.nodeType === 'output' && typeof node.setSpectrum === 'function') {
+            node.setSpectrum(bins);
+          }
+        }
+      } catch (error) {
+        console.error('Error handling SPECTRUM_UPDATE:', error);
+      }
     });
   }
 

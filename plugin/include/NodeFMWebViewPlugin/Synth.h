@@ -16,7 +16,9 @@ namespace nodefm_plugin
         void render(float **outputBufferes, int sampleCount);
         void midiMessage(u_int8_t data0, u_int8_t data1, u_int8_t data2);
         NodeID addNodeToGraph(const juce::String& nodeType, const juce::var& data);
-        void addConnection(NodeID sourceId, NodeID destId, float amount);
+        bool removeNodeFromGraph(NodeID nodeId);
+        void addConnection(NodeID sourceId, NodeID destId, float amount, ConnectionType type = ConnectionType::modulation);
+        bool removeConnection(NodeID sourceId, NodeID destId, ConnectionType type = ConnectionType::modulation);
         void updateNodeParameter(NodeID nodeId, const juce::String& paramName, float value);
         void updateNodePosition(NodeID nodeId, float x, float y);
         void updateConnectionAmount(NodeID sourceId, NodeID destId, float amount);

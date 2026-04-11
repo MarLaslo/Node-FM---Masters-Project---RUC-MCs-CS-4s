@@ -64,6 +64,7 @@ namespace nodefm_plugin
         webView.goToURL(webView.getResourceProviderRoot());
         setResizable(true, true);
         setSize(800, 600);
+        startTimerHz(30);
 
         juce::Component::SafePointer<AudioPluginAudioProcessorEditor> safeThis(this);
         juce::Timer::callAfterDelay(500, [safeThis]()
@@ -134,20 +135,25 @@ namespace nodefm_plugin
                 auto sourceVal = connObj->getProperty("sourceNodeId").toString();
                 auto destVal = connObj->getProperty("destNodeId").toString();
                 auto amountVal = connObj->getProperty("amount").toString();
+                auto connectionTypeValue = connObj->getProperty("connectionType").toString().toLowerCase();
                 
                 NodeID sourceNodeId = sourceVal.getIntValue();
                 NodeID destNodeId = destVal.getIntValue();
                 float amount = amountVal.getFloatValue();
+                const ConnectionType connectionType = (connectionTypeValue == "gain")
+                    ? ConnectionType::gain
+                    : ConnectionType::modulation;
                 
-                DBG("UI Request: Connect node " << (int)sourceNodeId << " -> " << (int)destNodeId << " (amount: " << amount << ")");
+                DBG("UI Request: Connect node " << (int)sourceNodeId << " -> " << (int)destNodeId << " (amount: " << amount << ", type: " << (connectionType == ConnectionType::gain ? "gain" : "modulation") << ")");
                 
-                processorRef.addConnection(sourceNodeId, destNodeId, amount);
+                processorRef.addConnection(sourceNodeId, destNodeId, amount, connectionType);
                 
                 // Send confirmation back to UI
                 juce::var connData = new juce::DynamicObject();
                 connData.getDynamicObject()->setProperty("sourceNodeId", (int)sourceNodeId);
                 connData.getDynamicObject()->setProperty("destNodeId", (int)destNodeId);
                 connData.getDynamicObject()->setProperty("amount", amount);
+                connData.getDynamicObject()->setProperty("connectionType", connectionType == ConnectionType::gain ? "gain" : "modulation");
                 sendMessageToJS("CONNECTION_ADDED", connData);
             }
         }
@@ -198,6 +204,48 @@ namespace nodefm_plugin
                 sendMessageToJS("CONNECTION_UPDATED", data);
             }
         }
+        else if (type == "REMOVE_CONNECTION")
+        {
+            auto data = obj->getProperty("data");
+            if (auto* dataObj = data.getDynamicObject())
+            {
+                const NodeID sourceNodeId = dataObj->getProperty("sourceNodeId").toString().getIntValue();
+                const NodeID destNodeId = dataObj->getProperty("destNodeId").toString().getIntValue();
+                const auto connectionTypeValue = dataObj->getProperty("connectionType").toString().toLowerCase();
+                const ConnectionType connectionType = connectionTypeValue == "gain"
+                    ? ConnectionType::gain
+                    : ConnectionType::modulation;
+
+                const bool removed = processorRef.removeConnection(sourceNodeId, destNodeId, connectionType);
+                if (removed)
+                {
+                    juce::var response = new juce::DynamicObject();
+                    response.getDynamicObject()->setProperty("sourceNodeId", static_cast<int>(sourceNodeId));
+                    response.getDynamicObject()->setProperty("destNodeId", static_cast<int>(destNodeId));
+                    response.getDynamicObject()->setProperty("connectionType", connectionType == ConnectionType::gain ? "gain" : "modulation");
+                    sendMessageToJS("CONNECTION_REMOVED", response);
+                }
+            }
+        }
+        else if (type == "REMOVE_NODE")
+        {
+            auto data = obj->getProperty("data");
+            if (auto* dataObj = data.getDynamicObject())
+            {
+                const NodeID nodeId = dataObj->getProperty("nodeId").toString().getIntValue();
+                const bool removed = processorRef.removeNode(nodeId);
+
+                if (removed)
+                {
+                    DBG("UI Request: Removed node " << static_cast<int>(nodeId));
+                    sendMessageToJS("NODE_REMOVED", data);
+                }
+                else
+                {
+                    DBG("UI Request: Remove node rejected for node " << static_cast<int>(nodeId));
+                }
+            }
+        }
         else if (type == "CLEAR_GRAPH")
         {
             DBG("UI Request: Clear graph");
@@ -221,6 +269,7 @@ namespace nodefm_plugin
             connectionData.getDynamicObject()->setProperty("sourceNodeId", (int)newOperatorNodeID);
             connectionData.getDynamicObject()->setProperty("destNodeId", (int)newOutputNodeID);
             connectionData.getDynamicObject()->setProperty("amount", 1.0f);
+            connectionData.getDynamicObject()->setProperty("connectionType", "gain");
             sendMessageToJS("CONNECTION_ADDED", connectionData);
             
             sendMessageToJS("GRAPH_CLEARED", outputNodeData);
@@ -242,6 +291,15 @@ namespace nodefm_plugin
 
     AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
     {
+        stopTimer();
+    }
+
+    void AudioPluginAudioProcessorEditor::timerCallback()
+    {
+        if (!isShowing())
+            return;
+
+        sendMessageToJS("SPECTRUM_UPDATE", processorRef.getSpectrumForUI());
     }
 
     void AudioPluginAudioProcessorEditor::resized()

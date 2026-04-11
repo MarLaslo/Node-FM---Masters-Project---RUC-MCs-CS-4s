@@ -1,6 +1,7 @@
 #include "NodeFMWebViewPlugin/graph/DSPGraph.h"
 #include "NodeFMWebViewPlugin/dsp/Oscillator.h"
 #include "NodeFMWebViewPlugin/dsp/Output.h"
+#include <algorithm>
 #include <queue>
 #include <unordered_set>
 
@@ -26,15 +27,75 @@ namespace nodefm_plugin
         outputNodeID = id;
     }
 
-    ConnectionID DSPGraph::addConnection(NodeID source, NodeID dest, float amount)
+    ConnectionID DSPGraph::addConnection(NodeID source, NodeID dest, float amount, ConnectionType type)
     {
         ConnectionID id = nextConnectionID++;
-        connections.push_back({id, source, dest, amount});
+        connections.push_back({id, source, dest, amount, type});
         
-        DBG("Added connection: Node " << (int)source << " -> Node " << (int)dest << " (amount: " << amount << ")");
+        DBG("Added connection: Node " << (int)source << " -> Node " << (int)dest << " (amount: " << amount << ", type: " << (type == ConnectionType::gain ? "gain" : "modulation") << ")");
         
         updateProcessingOrder(); // Recalculate topological order
         return id;
+    }
+
+    void DSPGraph::removeNode(NodeID id)
+    {
+        if (nodes.find(id) == nodes.end())
+            return;
+
+        nodes.erase(id);
+        nodePositions.erase(id);
+
+        connections.erase(
+            std::remove_if(
+                connections.begin(),
+                connections.end(),
+                [id](const Connection& conn)
+                {
+                    return conn.source == id || conn.destination == id;
+                }),
+            connections.end());
+
+        if (outputNodeID == id)
+            outputNodeID = 0;
+
+        updateProcessingOrder();
+    }
+
+    void DSPGraph::removeConnection(ConnectionID id)
+    {
+        connections.erase(
+            std::remove_if(
+                connections.begin(),
+                connections.end(),
+                [id](const Connection& conn)
+                {
+                    return conn.id == id;
+                }),
+            connections.end());
+
+        updateProcessingOrder();
+    }
+
+    bool DSPGraph::removeConnection(NodeID source, NodeID dest, ConnectionType type)
+    {
+        const auto previousSize = connections.size();
+
+        connections.erase(
+            std::remove_if(
+                connections.begin(),
+                connections.end(),
+                [source, dest, type](const Connection& conn)
+                {
+                    return conn.source == source && conn.destination == dest && conn.type == type;
+                }),
+            connections.end());
+
+        const auto removed = connections.size() < previousSize;
+        if (removed)
+            updateProcessingOrder();
+
+        return removed;
     }
 
     void DSPGraph::setSampleRate(float sr)
@@ -162,7 +223,11 @@ namespace nodefm_plugin
                                     float *sourceOut = sourceNode->getOutput();
                                     if (sourceOut)
                                     {
-                                        node->addModulation(sourceOut[0] * conn.ammount);
+                                        const float routedValue = sourceOut[0] * conn.ammount;
+                                        if (conn.type == ConnectionType::modulation)
+                                            node->addModulation(routedValue);
+                                        else
+                                            node->addModulation(routedValue);
                                     }
                                 }
                             }
@@ -347,6 +412,7 @@ namespace nodefm_plugin
             connectionElement.setAttribute("source", static_cast<int>(connection.source));
             connectionElement.setAttribute("destination", static_cast<int>(connection.destination));
             connectionElement.setAttribute("amount", connection.ammount);
+            connectionElement.setAttribute("type", connection.type == ConnectionType::gain ? "gain" : "modulation");
             connectionsElement.addChildElement(new juce::XmlElement(connectionElement));
         }
 
@@ -425,12 +491,14 @@ namespace nodefm_plugin
                 const auto source = static_cast<NodeID>(connectionElement->getIntAttribute("source", 0));
                 const auto destination = static_cast<NodeID>(connectionElement->getIntAttribute("destination", 0));
                 const auto amount = static_cast<float>(connectionElement->getDoubleAttribute("amount", 1.0));
+                const auto typeText = connectionElement->getStringAttribute("type", "modulation").toLowerCase();
+                const auto type = typeText == "gain" ? ConnectionType::gain : ConnectionType::modulation;
 
                 if (id == 0 || source == 0 || destination == 0)
                     continue;
 
                 if (nodes.find(source) != nodes.end() && nodes.find(destination) != nodes.end())
-                    connections.push_back({id, source, destination, amount});
+                    connections.push_back({id, source, destination, amount, type});
             }
         }
 
@@ -510,6 +578,7 @@ namespace nodefm_plugin
             connectionObject->setProperty("sourceNodeId", static_cast<int>(connection.source));
             connectionObject->setProperty("destNodeId", static_cast<int>(connection.destination));
             connectionObject->setProperty("amount", connection.ammount);
+            connectionObject->setProperty("connectionType", connection.type == ConnectionType::gain ? "gain" : "modulation");
             connectionArray.add(connectionVar);
         }
 

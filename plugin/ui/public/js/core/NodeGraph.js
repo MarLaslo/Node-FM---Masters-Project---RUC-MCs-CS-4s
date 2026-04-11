@@ -11,11 +11,17 @@ export class NodeGraph {
     this.selectedNode = null;
     this.dragOffset = { x: 0, y: 0 };
     this.isDragging = false;
+    this.isPanning = false;
+    this.panStart = { x: 0, y: 0 };
+    this.panStartOffset = { x: 0, y: 0 };
     this.isAdjustingKnob = false;
     this.adjustingKnob = null;
     this.isConnecting = false;
     this.connectionStart = null;
     this.selectedConnection = null;
+    this.hoveredConnection = null;
+    this.isAdjustingConnection = false;
+    this.adjustingConnection = null;
     this.mousePos = { x: 0, y: 0 };
     this.hoveredParamNode = null;
     this.hoveredKnob = null;
@@ -24,6 +30,14 @@ export class NodeGraph {
     this.lastCanvasDoubleClickTime = 0;
     this.lastCanvasClickTime = 0;
     this.lastCanvasClickPos = null;
+    this.contextMenuElement = null;
+    this.contextMenuNode = null;
+    this.contextMenuConnection = null;
+    this.viewScale = 1;
+    this.viewOffset = { x: 0, y: 0 };
+    this.minZoom = 0.4;
+    this.maxZoom = 2.4;
+    this.zoomStep = 1.1;
     this.adsrPanel = new AdsrPanel((node, paramName, value) => this.emitNodeParameterUpdate(node, paramName, value));
 
     this.setupCanvas();
@@ -53,6 +67,7 @@ export class NodeGraph {
       window.addEventListener('pointermove', (e) => this.onMouseMove(e));
       window.addEventListener('pointerup', (e) => this.onMouseUp(e));
       window.addEventListener('pointercancel', (e) => this.onMouseUp(e));
+      window.addEventListener('pointerdown', (e) => this.onGlobalPointerDown(e));
     } else {
       this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
       this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
@@ -60,9 +75,12 @@ export class NodeGraph {
 
       window.addEventListener('mousemove', (e) => this.onMouseMove(e));
       window.addEventListener('mouseup', (e) => this.onMouseUp(e));
+      window.addEventListener('mousedown', (e) => this.onGlobalPointerDown(e));
     }
 
     this.canvas.addEventListener('dblclick', (e) => this.onDoubleClick(e));
+    this.canvas.addEventListener('contextmenu', (e) => this.onContextMenu(e));
+    this.canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
   }
 
   setCanvasDoubleClickHandler(handler) {
@@ -100,13 +118,70 @@ export class NodeGraph {
 
   getMousePos(e) {
     const rect = this.canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    return {
+      x: (screenX - this.viewOffset.x) / this.viewScale,
+      y: (screenY - this.viewOffset.y) / this.viewScale
+    };
+  }
+
+  getCanvasPos(e) {
+    const rect = this.canvas.getBoundingClientRect();
     return {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top
     };
   }
 
+  onWheel(e) {
+    e.preventDefault();
+
+    const direction = e.deltaY < 0 ? 1 : -1;
+    if (direction > 0) {
+      this.zoomBy(this.zoomStep, e.clientX, e.clientY);
+    } else {
+      this.zoomBy(1 / this.zoomStep, e.clientX, e.clientY);
+    }
+  }
+
+  zoomIn() {
+    this.zoomBy(this.zoomStep, this.canvas.width / 2, this.canvas.height / 2, true);
+  }
+
+  zoomOut() {
+    this.zoomBy(1 / this.zoomStep, this.canvas.width / 2, this.canvas.height / 2, true);
+  }
+
+  resetZoom() {
+    this.viewScale = 1;
+    this.viewOffset = { x: 0, y: 0 };
+  }
+
+  zoomBy(zoomFactor, screenX, screenY, useCanvasSpace = false) {
+    const rect = this.canvas.getBoundingClientRect();
+    const canvasX = useCanvasSpace ? screenX : (screenX - rect.left);
+    const canvasY = useCanvasSpace ? screenY : (screenY - rect.top);
+
+    const oldScale = this.viewScale;
+    const newScale = Math.max(this.minZoom, Math.min(this.maxZoom, oldScale * zoomFactor));
+
+    if (Math.abs(newScale - oldScale) < 1e-6) {
+      return;
+    }
+
+    const worldX = (canvasX - this.viewOffset.x) / oldScale;
+    const worldY = (canvasY - this.viewOffset.y) / oldScale;
+
+    this.viewScale = newScale;
+    this.viewOffset.x = canvasX - worldX * newScale;
+    this.viewOffset.y = canvasY - worldY * newScale;
+    this.hideContextMenu();
+  }
+
   onMouseDown(e) {
+    this.hideContextMenu();
+
     if (typeof e.button === 'number' && e.button !== 0) {
       return;
     }
@@ -149,39 +224,35 @@ export class NodeGraph {
       const conn = this.connections[i];
       if (this.isPointNearConnection(pos, conn)) {
         this.selectedConnection = conn;
-        this.showConnectionPanel(conn);
+        this.beginConnectionAdjustment(conn, e.clientY);
         return;
       }
     }
 
-    let nodeClicked = false;
-    for (let i = this.nodes.length - 1; i >= 0; i--) {
-      const node = this.nodes[i];
-      if (
-        pos.x >= node.x &&
-        pos.x <= node.x + node.width &&
-        pos.y >= node.y &&
-        pos.y <= node.y + node.height
-      ) {
-        if (typeof node.onParameterClick === 'function') {
-          const handled = node.onParameterClick(pos.x, pos.y, this);
-          if (handled) return;
-        }
+    const clickedNode = this.findNodeAtPosition(pos);
+    const nodeClicked = !!clickedNode;
 
-        this.selectedNode = node;
-        this.isDragging = true;
-        this.dragOffset = { x: pos.x - node.x, y: pos.y - node.y };
-        nodeClicked = true;
-        this.selectedConnection = null;
-
-        this.showParameterPanel(node);
-        break;
+    if (clickedNode) {
+      if (typeof clickedNode.onParameterClick === 'function') {
+        const handled = clickedNode.onParameterClick(pos.x, pos.y, this);
+        if (handled) return;
       }
+
+      this.selectedNode = clickedNode;
+      this.isDragging = true;
+      this.dragOffset = { x: pos.x - clickedNode.x, y: pos.y - clickedNode.y };
+      this.selectedConnection = null;
+
+      this.showParameterPanel(clickedNode);
     }
 
     if (!nodeClicked) {
       this.hideParameterPanel();
       this.selectedConnection = null;
+      this.isPanning = true;
+      this.panStart = this.getCanvasPos(e);
+      this.panStartOffset = { x: this.viewOffset.x, y: this.viewOffset.y };
+      this.canvas.style.cursor = 'grabbing';
     }
   }
 
@@ -194,8 +265,23 @@ export class NodeGraph {
       return;
     }
 
+    if (this.isAdjustingConnection && this.adjustingConnection) {
+      this.updateConnectionAdjustment(e.clientY);
+      this.canvas.style.cursor = 'ns-resize';
+      return;
+    }
+
+    if (this.isPanning) {
+      const currentCanvasPos = this.getCanvasPos(e);
+      this.viewOffset.x = this.panStartOffset.x + (currentCanvasPos.x - this.panStart.x);
+      this.viewOffset.y = this.panStartOffset.y + (currentCanvasPos.y - this.panStart.y);
+      this.canvas.style.cursor = 'grabbing';
+      return;
+    }
+
     let cursorStyle = 'default';
     this.hoveredParamNode = null;
+    this.hoveredConnection = null;
 
     for (const node of this.nodes) {
       if (node instanceof OperatorNode) {
@@ -204,6 +290,17 @@ export class NodeGraph {
           cursorStyle = 'pointer';
           this.hoveredParamNode = node;
           this.hoveredKnob = { node, paramName: knob.paramName };
+          break;
+        }
+      }
+    }
+
+    if (cursorStyle === 'default') {
+      for (let i = this.connections.length - 1; i >= 0; i--) {
+        const conn = this.connections[i];
+        if (this.isPointNearConnection(pos, conn)) {
+          this.hoveredConnection = conn;
+          cursorStyle = 'ns-resize';
           break;
         }
       }
@@ -222,6 +319,12 @@ export class NodeGraph {
     if (this.isAdjustingKnob) {
       this.isAdjustingKnob = false;
       this.adjustingKnob = null;
+      return;
+    }
+
+    if (this.isAdjustingConnection) {
+      this.isAdjustingConnection = false;
+      this.adjustingConnection = null;
       return;
     }
 
@@ -245,6 +348,11 @@ export class NodeGraph {
     }
 
     this.isDragging = false;
+    this.isPanning = false;
+
+    if (this.canvas.style.cursor === 'grabbing') {
+      this.canvas.style.cursor = 'default';
+    }
   }
 
   onDoubleClick(e) {
@@ -272,11 +380,249 @@ export class NodeGraph {
     }
   }
 
+  onContextMenu(e) {
+    e.preventDefault();
+
+    const pos = this.getMousePos(e);
+    const node = this.findNodeAtPosition(pos);
+
+    if (!node) {
+      const conn = this.findConnectionAtPosition(pos);
+      if (!conn) {
+        this.hideContextMenu();
+        return;
+      }
+
+      this.selectedConnection = conn;
+      this.selectedNode = null;
+      this.showConnectionContextMenu(e.clientX, e.clientY, conn);
+      return;
+    }
+
+    this.selectedNode = node;
+    this.selectedConnection = null;
+    this.showParameterPanel(node);
+    this.showNodeContextMenu(e.clientX, e.clientY, node);
+  }
+
+  onGlobalPointerDown(e) {
+    if (this.contextMenuElement && this.contextMenuElement.contains(e.target)) {
+      return;
+    }
+
+    this.hideContextMenu();
+  }
+
+  findNodeAtPosition(pos) {
+    for (let i = this.nodes.length - 1; i >= 0; i--) {
+      const node = this.nodes[i];
+      if (
+        pos.x >= node.x &&
+        pos.x <= node.x + node.width &&
+        pos.y >= node.y &&
+        pos.y <= node.y + node.height
+      ) {
+        return node;
+      }
+    }
+
+    return null;
+  }
+
+  findConnectionAtPosition(pos) {
+    for (let i = this.connections.length - 1; i >= 0; i--) {
+      const conn = this.connections[i];
+      if (this.isPointNearConnection(pos, conn)) {
+        return conn;
+      }
+    }
+
+    return null;
+  }
+
+  showNodeContextMenu(clientX, clientY, node) {
+    if (!this.contextMenuElement) {
+      const menu = document.createElement('div');
+      menu.style.position = 'fixed';
+      menu.style.zIndex = '1000';
+      menu.style.background = '#2a2a2a';
+      menu.style.border = '1px solid #4a90e2';
+      menu.style.borderRadius = '6px';
+      menu.style.padding = '4px';
+      menu.style.minWidth = '120px';
+      menu.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.4)';
+      menu.style.display = 'none';
+
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.style.width = '100%';
+      deleteButton.style.border = 'none';
+      deleteButton.style.borderRadius = '4px';
+      deleteButton.style.padding = '8px 10px';
+      deleteButton.style.background = 'transparent';
+      deleteButton.style.color = '#ff7d7d';
+      deleteButton.style.textAlign = 'left';
+      deleteButton.style.cursor = 'pointer';
+      deleteButton.textContent = 'Delete node';
+
+      deleteButton.addEventListener('mouseenter', () => {
+        if (!deleteButton.disabled) {
+          deleteButton.style.background = '#3a3a3a';
+        }
+      });
+      deleteButton.addEventListener('mouseleave', () => {
+        deleteButton.style.background = 'transparent';
+      });
+
+      deleteButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (this.contextMenuConnection) {
+          this.removeConnection(this.contextMenuConnection, true);
+          this.hideContextMenu();
+          return;
+        }
+
+        if (!this.contextMenuNode) {
+          this.hideContextMenu();
+          return;
+        }
+
+        this.removeNode(this.contextMenuNode, true);
+        this.hideContextMenu();
+      });
+
+      menu.appendChild(deleteButton);
+      document.body.appendChild(menu);
+
+      this.contextMenuElement = menu;
+      this.contextMenuDeleteButton = deleteButton;
+    }
+
+    this.contextMenuNode = node;
+    this.contextMenuConnection = null;
+    const isProtected = this.isNodeProtectedFromDeletion(node);
+
+    this.contextMenuDeleteButton.textContent = 'Delete node';
+    this.contextMenuDeleteButton.disabled = isProtected;
+    this.contextMenuDeleteButton.style.opacity = isProtected ? '0.45' : '1';
+    this.contextMenuDeleteButton.style.cursor = isProtected ? 'not-allowed' : 'pointer';
+
+    this.contextMenuElement.style.left = `${clientX}px`;
+    this.contextMenuElement.style.top = `${clientY}px`;
+    this.contextMenuElement.style.display = 'block';
+  }
+
+  showConnectionContextMenu(clientX, clientY, conn) {
+    if (!this.contextMenuElement) {
+      this.showNodeContextMenu(clientX, clientY, conn.fromNode);
+    }
+
+    this.contextMenuNode = null;
+    this.contextMenuConnection = conn;
+    this.contextMenuDeleteButton.disabled = false;
+    this.contextMenuDeleteButton.style.opacity = '1';
+    this.contextMenuDeleteButton.style.cursor = 'pointer';
+    this.contextMenuDeleteButton.textContent = 'Delete connection';
+
+    this.contextMenuElement.style.left = `${clientX}px`;
+    this.contextMenuElement.style.top = `${clientY}px`;
+    this.contextMenuElement.style.display = 'block';
+  }
+
+  hideContextMenu() {
+    if (this.contextMenuElement) {
+      this.contextMenuElement.style.display = 'none';
+    }
+    this.contextMenuNode = null;
+    this.contextMenuConnection = null;
+    if (this.contextMenuDeleteButton) {
+      this.contextMenuDeleteButton.textContent = 'Delete node';
+    }
+  }
+
+  isNodeProtectedFromDeletion(node) {
+    return node && typeof node.title === 'string' && node.title.toLowerCase() === 'output';
+  }
+
+  removeNode(node, sendBackendUpdate = true) {
+    if (!node || this.isNodeProtectedFromDeletion(node)) {
+      return false;
+    }
+
+    const backendNodeId = node.backendId;
+
+    this.connections = this.connections.filter((conn) => conn.fromNode !== node && conn.toNode !== node);
+    this.nodes = this.nodes.filter((graphNode) => graphNode !== node);
+
+    if (this.selectedNode === node) {
+      this.selectedNode = null;
+      this.hideParameterPanel();
+    }
+
+    if (
+      this.selectedConnection
+      && (this.selectedConnection.fromNode === node || this.selectedConnection.toNode === node)
+    ) {
+      this.selectedConnection = null;
+    }
+
+    if (this.hoveredParamNode === node) {
+      this.hoveredParamNode = null;
+      this.hoveredKnob = null;
+    }
+
+    if (this.adjustingKnob && this.adjustingKnob.node === node) {
+      this.isAdjustingKnob = false;
+      this.adjustingKnob = null;
+    }
+
+    if (sendBackendUpdate && backendNodeId !== null && backendNodeId !== undefined) {
+      emitToBackend({
+        type: 'REMOVE_NODE',
+        data: {
+          nodeId: backendNodeId
+        }
+      });
+    }
+
+    return true;
+  }
+
+  removeConnection(conn, sendBackendUpdate = true) {
+    if (!conn) {
+      return false;
+    }
+
+    this.connections = this.connections.filter((candidate) => candidate !== conn);
+
+    if (this.selectedConnection === conn) {
+      this.selectedConnection = null;
+      this.hideParameterPanel();
+    }
+
+    if (this.hoveredConnection === conn) {
+      this.hoveredConnection = null;
+    }
+
+    if (sendBackendUpdate) {
+      emitToBackend({
+        type: 'REMOVE_CONNECTION',
+        data: {
+          sourceNodeId: conn.fromNode.backendId,
+          destNodeId: conn.toNode.backendId,
+          connectionType: conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode)
+        }
+      });
+    }
+
+    return true;
+  }
+
   isPointNearConnection(point, conn) {
     const start = conn.fromNode.getOutputPortPosition(conn.fromPort);
     const end = conn.toNode.getInputPortPosition(conn.toPort);
 
-    const threshold = 10;
+    const threshold = 10 / this.viewScale;
     const dist = this.distanceToLineSegment(point, start, end);
     return dist < threshold;
   }
@@ -300,12 +646,14 @@ export class NodeGraph {
   }
 
   addConnection(fromNode, fromPort, toNode, toPort) {
+    const connectionType = this.inferConnectionType(fromNode, toNode);
     const connection = {
       fromNode,
       fromPort,
       toNode,
       toPort,
-      amount: 1.0
+      amount: connectionType === 'gain' ? 1.0 : 1.0,
+      connectionType
     };
     this.connections.push(connection);
 
@@ -314,9 +662,20 @@ export class NodeGraph {
       data: {
         sourceNodeId: fromNode.backendId,
         destNodeId: toNode.backendId,
-        amount: connection.amount
+        amount: connection.amount,
+        connectionType: connection.connectionType
       }
     });
+  }
+
+  inferConnectionType(fromNode, toNode) {
+    const toType = ((toNode && toNode.nodeType) || '').toLowerCase();
+
+    if (toType === 'operator' || toType === 'oscillator') {
+      return 'modulation';
+    }
+
+    return 'gain';
   }
 
   addNode(node) {
@@ -327,7 +686,7 @@ export class NodeGraph {
     return this.nodes.find((node) => node.backendId === backendId) || null;
   }
 
-  addConnectionFromBackend(sourceNodeId, destNodeId, amount) {
+  addConnectionFromBackend(sourceNodeId, destNodeId, amount, connectionType = null) {
     const fromNode = this.findNodeByBackendId(sourceNodeId);
     const toNode = this.findNodeByBackendId(destNodeId);
 
@@ -335,12 +694,15 @@ export class NodeGraph {
       return false;
     }
 
+    const resolvedType = connectionType || this.inferConnectionType(fromNode, toNode);
+
     this.connections.push({
       fromNode,
       fromPort: 0,
       toNode,
       toPort: 0,
-      amount
+      amount,
+      connectionType: resolvedType
     });
 
     return true;
@@ -448,7 +810,8 @@ export class NodeGraph {
       this.addConnectionFromBackend(
         parseInt(connectionData.sourceNodeId, 10),
         parseInt(connectionData.destNodeId, 10),
-        connectionData.amount ?? 1.0
+        connectionData.amount ?? 1.0,
+        connectionData.connectionType || null
       );
     });
 
@@ -457,6 +820,7 @@ export class NodeGraph {
 
   assignBackendNodeData(node, nodeData) {
     node.backendId = nodeData.id;
+    node.nodeType = (nodeData.type || '').toLowerCase();
 
     const params = nodeData.data || {};
     if (node instanceof OperatorNode) {
@@ -485,6 +849,14 @@ export class NodeGraph {
     this.drawGrid();
 
     this.ctx.save();
+    this.ctx.setTransform(
+      this.viewScale,
+      0,
+      0,
+      this.viewScale,
+      this.viewOffset.x,
+      this.viewOffset.y
+    );
 
     this.connections.forEach((conn) => this.drawConnection(conn));
 
@@ -507,8 +879,29 @@ export class NodeGraph {
       } else {
         node.draw(this.ctx);
       }
+
+      if (this.selectedNode === node) {
+        this.drawSelectedNodeHighlight(node);
+      }
     });
 
+    this.ctx.restore();
+  }
+
+  drawSelectedNodeHighlight(node) {
+    const padding = 3;
+
+    this.ctx.save();
+    this.ctx.strokeStyle = '#ffb347';
+    this.ctx.lineWidth = 3;
+    this.ctx.shadowColor = 'rgba(255, 179, 71, 0.55)';
+    this.ctx.shadowBlur = 12;
+    this.ctx.strokeRect(
+      node.x - padding,
+      node.y - padding,
+      node.width + padding * 2,
+      node.height + padding * 2
+    );
     this.ctx.restore();
   }
 
@@ -517,8 +910,12 @@ export class NodeGraph {
     const end = conn.toNode.getInputPortPosition(conn.toPort);
 
     const isSelected = this.selectedConnection === conn;
-    this.ctx.strokeStyle = isSelected ? '#ff6b6b' : '#4a90e2';
-    this.ctx.lineWidth = isSelected ? 3 : 2;
+    const strength = this.getConnectionStrength(conn);
+    const isHovered = this.hoveredConnection === conn;
+    const color = this.getConnectionColor(conn, strength, isSelected || isHovered);
+    const baseWidth = 1.5 + strength * 3.5;
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = isSelected ? baseWidth + 1 : baseWidth;
     this.ctx.beginPath();
     this.ctx.moveTo(start.x, start.y);
 
@@ -529,21 +926,134 @@ export class NodeGraph {
       end.x, end.y
     );
     this.ctx.stroke();
+
+    if (isSelected || isHovered) {
+      const midX = (start.x + end.x) * 0.5;
+      const midY = (start.y + end.y) * 0.5 - 6;
+      this.ctx.fillStyle = '#d5ebff';
+      this.ctx.font = '11px monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.fillText(this.formatConnectionValue(conn), midX, midY);
+    }
+  }
+
+  getConnectionRange(conn) {
+    const connectionType = conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode);
+    if (connectionType === 'gain') {
+      return {
+        min: 0,
+        max: 2,
+        sensitivity: 220
+      };
+    }
+
+    return {
+      min: 0,
+      max: 20,
+      sensitivity: 260
+    };
+  }
+
+  beginConnectionAdjustment(conn, mouseClientY) {
+    const range = this.getConnectionRange(conn);
+    this.isAdjustingConnection = true;
+    this.adjustingConnection = {
+      connection: conn,
+      startY: mouseClientY,
+      startAmount: Number.isFinite(conn.amount) ? conn.amount : 0,
+      min: range.min,
+      max: range.max,
+      sensitivity: range.sensitivity
+    };
+  }
+
+  updateConnectionAdjustment(mouseClientY) {
+    if (!this.adjustingConnection) {
+      return;
+    }
+
+    const state = this.adjustingConnection;
+    const delta = state.startY - mouseClientY;
+    const range = state.max - state.min;
+    const normalizedDelta = (delta / state.sensitivity) * range;
+    const newAmount = Math.max(
+      state.min,
+      Math.min(state.max, state.startAmount + normalizedDelta)
+    );
+
+    const conn = state.connection;
+    conn.amount = newAmount;
+
+    emitToBackend({
+      type: 'UPDATE_CONNECTION',
+      data: {
+        sourceNodeId: conn.fromNode.backendId,
+        destNodeId: conn.toNode.backendId,
+        amount: conn.amount,
+        connectionType: conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode)
+      }
+    });
+  }
+
+  getConnectionStrength(conn) {
+    const connectionType = conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode);
+    const amount = Number.isFinite(conn.amount) ? conn.amount : 0;
+
+    if (connectionType === 'gain') {
+      return Math.max(0, Math.min(1, amount / 2));
+    }
+
+    return Math.max(0, Math.min(1, amount / 20));
+  }
+
+  getConnectionColor(conn, strength, emphasized = false) {
+    const connectionType = conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode);
+    const alpha = emphasized ? 0.95 : (0.35 + strength * 0.55);
+
+    if (connectionType === 'gain') {
+      const r = Math.round(80 + strength * 80);
+      const g = Math.round(190 + strength * 50);
+      const b = Math.round(120 + strength * 55);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    const r = Math.round(74 + strength * 110);
+    const g = Math.round(144 + strength * 70);
+    const b = Math.round(226 + strength * 20);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  formatConnectionValue(conn) {
+    const connectionType = conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode);
+    const amount = Number.isFinite(conn.amount) ? conn.amount : 0;
+    if (connectionType === 'gain') {
+      return `gain ${amount.toFixed(2)}`;
+    }
+
+    return `idx ${amount.toFixed(2)}`;
   }
 
   drawGrid() {
     const gridSize = 40;
+    const scaledGrid = gridSize * this.viewScale;
+    if (scaledGrid < 8) {
+      return;
+    }
+
     this.ctx.strokeStyle = '#2a2a2a';
     this.ctx.lineWidth = 1;
 
-    for (let x = 0; x < this.canvas.width; x += gridSize) {
+    const startX = ((this.viewOffset.x % scaledGrid) + scaledGrid) % scaledGrid;
+    const startY = ((this.viewOffset.y % scaledGrid) + scaledGrid) % scaledGrid;
+
+    for (let x = startX; x < this.canvas.width; x += scaledGrid) {
       this.ctx.beginPath();
       this.ctx.moveTo(x, 0);
       this.ctx.lineTo(x, this.canvas.height);
       this.ctx.stroke();
     }
 
-    for (let y = 0; y < this.canvas.height; y += gridSize) {
+    for (let y = startY; y < this.canvas.height; y += scaledGrid) {
       this.ctx.beginPath();
       this.ctx.moveTo(0, y);
       this.ctx.lineTo(this.canvas.width, y);
@@ -564,6 +1074,7 @@ export class NodeGraph {
     const title = document.getElementById('paramTitle');
     const controls = document.getElementById('paramControls');
 
+    panel.style.display = 'block';
     title.textContent = `${node.title} (ID: ${node.backendId})`;
     controls.innerHTML = '';
 
@@ -573,8 +1084,6 @@ export class NodeGraph {
     } else {
       panel.classList.remove('adsr-compact');
     }
-
-    panel.style.display = 'block';
   }
 
   showConnectionPanel(conn) {
@@ -584,10 +1093,17 @@ export class NodeGraph {
 
     panel.classList.remove('adsr-compact');
 
-    title.textContent = `Connection: ${conn.fromNode.title} -> ${conn.toNode.title}`;
+    const connectionType = conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode);
+    const isGainConnection = connectionType === 'gain';
+    const label = isGainConnection ? 'Gain' : 'Modulation Index';
+    const min = isGainConnection ? 0 : 0;
+    const max = isGainConnection ? 2 : 20;
+    const step = isGainConnection ? 0.01 : 0.1;
+
+    title.textContent = `Connection: ${conn.fromNode.title} -> ${conn.toNode.title} (${connectionType})`;
     controls.innerHTML = '';
 
-    this.createConnectionControl(controls, 'Modulation Index', 'amount', conn.amount, 0, 20, 0.1, conn);
+    this.createConnectionControl(controls, label, 'amount', conn.amount, min, max, step, conn);
 
     panel.style.display = 'block';
   }
@@ -631,7 +1147,8 @@ export class NodeGraph {
         data: {
           sourceNodeId: conn.fromNode.backendId,
           destNodeId: conn.toNode.backendId,
-          amount: parsed
+          amount: parsed,
+          connectionType: conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode)
         }
       });
     };

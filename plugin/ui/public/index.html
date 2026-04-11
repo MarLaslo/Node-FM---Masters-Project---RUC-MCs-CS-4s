@@ -42,38 +42,39 @@
         left: 12px;
         right: 12px;
         bottom: 12px;
-        width: 380px;
-        max-width: 280px;
+        width: 360px;
+        max-width: 360px;
         margin: 0 auto;
-        background: #2c2c2c;
-        border: 1px solid #4a90e2;
-        border-radius: 8px;
-        padding: 10px;
+        background: linear-gradient(180deg, #242831 0%, #1d2128 100%);
+        border: 1px solid #3f4d63;
+        border-radius: 12px;
+        padding: 10px 10px 9px;
         color: white;
         display: none;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.45);
       }
       #paramPanel.adsr-compact {
         left: auto;
         right: 12px;
-        width: 280px;
+        width: 360px;
         max-width: calc(100vw - 24px);
-        padding: 8px;
+        padding: 10px;
       }
       #paramPanel.adsr-compact h4 {
-        margin: 0 0 6px 0;
-        padding-bottom: 4px;
-        font-size: 11px;
+        margin: 0 0 7px 0;
+        padding-bottom: 5px;
+        font-size: 12px;
       }
       #paramPanel.adsr-compact h3 {
-        margin: 7px 0 5px 0;
-        font-size: 9px;
-        padding-bottom: 2px;
+        margin: 0 0 6px 0;
+        font-size: 10px;
+        padding-bottom: 0;
+        border-bottom: none;
       }
       #paramPanel h4 {
         margin: 0 0 8px 0;
-        color: #4a90e2;
-        border-bottom: 1px solid #444;
+        color: #7cc4ff;
+        border-bottom: 1px solid #374154;
         padding-bottom: 5px;
         font-size: 13px;
       }
@@ -117,67 +118,81 @@
         font-weight: bold;
       }
       .adsr-envelope-wrap {
-        margin-bottom: 6px;
-        background: #1f1f1f;
-        border: 1px solid #3b3b3b;
-        border-radius: 6px;
-        padding: 4px;
+        margin-bottom: 8px;
+        background: linear-gradient(180deg, #1a1f29 0%, #151a22 100%);
+        border: 1px solid #374459;
+        border-radius: 9px;
+        padding: 6px;
       }
       .adsr-envelope {
         width: 100%;
-        height: 48px;
+        height: 86px;
         display: block;
-        border-radius: 4px;
+        border-radius: 6px;
+      }
+      .adsr-section {
+        display: block;
+      }
+      .adsr-meta {
+        font-size: 9px;
+        color: #93a2bb;
+        letter-spacing: 0.35px;
+        text-transform: uppercase;
+        margin-bottom: 5px;
       }
       .adsr-knob-grid {
-        display: flex;
-        gap: 6px;
-        justify-content: space-between;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 7px;
       }
       .adsr-knob-control {
         display: flex;
         flex-direction: column;
         align-items: center;
-        min-width: 45px;
+        min-width: 0;
+        background: rgba(17, 21, 29, 0.75);
+        border: 1px solid #303c50;
+        border-radius: 8px;
+        padding: 6px 4px 5px;
         user-select: none;
       }
       .adsr-knob {
-        width: 24px;
-        height: 24px;
+        width: 32px;
+        height: 32px;
         border-radius: 50%;
-        border: 1px solid #4a90e2;
-        background: radial-gradient(circle at 30% 25%, #4a4a4a, #222);
+        border: 1px solid #5d8cb9;
+        background: radial-gradient(circle at 30% 25%, #4f5f76, #202732);
         position: relative;
         cursor: ns-resize;
-        box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.45);
+        box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.45);
       }
       .adsr-knob:hover {
-        border-color: #ff9800;
+        border-color: #ffd07f;
       }
       .adsr-knob-indicator {
         position: absolute;
         left: 50%;
         top: 50%;
         width: 2px;
-        height: 7px;
+        height: 10px;
         background: #fff;
         border-radius: 1px;
-        transform-origin: center 5px;
+        transform-origin: center 7px;
         transform: translate(-50%, -50%) rotate(var(--knob-angle, -135deg));
       }
       .adsr-knob-label {
-        margin-top: 3px;
-        font-size: 7px;
-        color: #bdbdbd;
-        letter-spacing: 0.3px;
+        margin-top: 5px;
+        font-size: 9px;
+        color: #c7d3e3;
+        letter-spacing: 0.45px;
         text-transform: uppercase;
       }
       .adsr-knob-value {
-        margin-top: 1px;
-        font-size: 8px;
-        color: #6ab0f3;
+        margin-top: 2px;
+        font-size: 10px;
+        color: #8fd0ff;
         font-weight: bold;
+        font-variant-numeric: tabular-nums;
       }
       @media (max-width: 760px) {
         #paramPanel {
@@ -192,6 +207,7 @@
         }
         .adsr-knob-grid {
           gap: 6px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
     </style>
@@ -201,6 +217,9 @@
       <h3 style="margin: 0;">Node FM </h3>
       <button id="addOperatorBtn">Add Operator</button>
       <button id="clearGraphBtn">Clear Graph</button>
+      <button id="zoomOutBtn">Zoom -</button>
+      <button id="zoomInBtn">Zoom +</button>
+      <button id="zoomResetBtn">Reset Zoom</button>
       <span id="info" style="margin-left: auto;"></span>
     </div>
     <canvas id="canvas"></canvas>
