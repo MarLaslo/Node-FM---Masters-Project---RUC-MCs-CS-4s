@@ -1,4 +1,4 @@
-import { emitToBackend } from './backendApi.js';
+import { emitToBackend } from './api/backendApi.js';
 import { FilterNode } from './nodes/FilterNode.js';
 import { OperatorNode } from './nodes/OperatorNode.js';
 import { AdsrPanel } from './ui/AdsrPanel.js';
@@ -32,18 +32,51 @@ export class NodeGraph {
     this.lastCanvasClickTime = 0;
     this.lastCanvasClickPos = null;
     this.contextMenuElement = null;
+    this.contextMenuListElement = null;
     this.contextMenuNode = null;
     this.contextMenuConnection = null;
+    this.contextMenuCanvasPosition = null;
+    this.onCanvasAddNodeRequested = null;
     this.viewScale = 1;
     this.viewOffset = { x: 0, y: 0 };
     this.minZoom = 0.4;
     this.maxZoom = 2.4;
     this.zoomStep = 1.1;
+    this.parameterPanelMinimized = false;
     this.adsrPanel = new AdsrPanel((node, paramName, value) => this.emitNodeParameterUpdate(node, paramName, value));
 
+    this.initializeParameterPanelState();
     this.setupCanvas();
     this.setupEventListeners();
     this.startRenderLoop();
+  }
+
+  initializeParameterPanelState() {
+    const storedValue = window.localStorage.getItem('nodefm.paramPanelMinimized');
+    this.parameterPanelMinimized = storedValue === '1';
+
+    const toggleButton = document.getElementById('paramPanelToggle');
+    if (toggleButton) {
+      toggleButton.addEventListener('click', () => {
+        this.parameterPanelMinimized = !this.parameterPanelMinimized;
+        window.localStorage.setItem('nodefm.paramPanelMinimized', this.parameterPanelMinimized ? '1' : '0');
+        this.applyParameterPanelState();
+      });
+    }
+
+    this.applyParameterPanelState();
+  }
+
+  applyParameterPanelState() {
+    const panel = document.getElementById('paramPanel');
+    const toggleButton = document.getElementById('paramPanelToggle');
+    if (!panel || !toggleButton) {
+      return;
+    }
+
+    panel.classList.toggle('is-minimized', this.parameterPanelMinimized);
+    toggleButton.textContent = this.parameterPanelMinimized ? '+' : '_';
+    toggleButton.title = this.parameterPanelMinimized ? 'Expand panel' : 'Minimize panel';
   }
 
   setupCanvas() {
@@ -82,10 +115,53 @@ export class NodeGraph {
     this.canvas.addEventListener('dblclick', (e) => this.onDoubleClick(e));
     this.canvas.addEventListener('contextmenu', (e) => this.onContextMenu(e));
     this.canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    window.addEventListener('keydown', (e) => this.onKeyDown(e));
+  }
+
+  onKeyDown(e) {
+    if (!e) {
+      return;
+    }
+
+    const isDeletionKey = e.key === 'Delete' || e.key === 'Backspace';
+    if (!isDeletionKey) {
+      return;
+    }
+
+    const activeElement = document.activeElement;
+    if (activeElement) {
+      const tagName = (activeElement.tagName || '').toLowerCase();
+      const isTypingTarget =
+        activeElement.isContentEditable
+        || tagName === 'input'
+        || tagName === 'textarea'
+        || tagName === 'select';
+
+      if (isTypingTarget) {
+        return;
+      }
+    }
+
+    if (this.selectedNode && !this.isNodeProtectedFromDeletion(this.selectedNode)) {
+      this.removeNode(this.selectedNode, true);
+      this.hideContextMenu();
+      e.preventDefault();
+      return;
+    }
+
+    if (this.selectedConnection) {
+      this.removeConnection(this.selectedConnection, true);
+      this.hideContextMenu();
+      e.preventDefault();
+    }
   }
 
   setCanvasDoubleClickHandler(handler) {
     this.onCanvasDoubleClick = handler;
+  }
+
+  setCanvasAddNodeHandler(handler) {
+    this.onCanvasAddNodeRequested = handler;
   }
 
   syncNodePosition(node, force = false) {
@@ -390,7 +466,9 @@ export class NodeGraph {
     if (!node) {
       const conn = this.findConnectionAtPosition(pos);
       if (!conn) {
-        this.hideContextMenu();
+        this.selectedConnection = null;
+        this.selectedNode = null;
+        this.showCanvasContextMenu(e.clientX, e.clientY, pos);
         return;
       }
 
@@ -442,88 +520,166 @@ export class NodeGraph {
   }
 
   showNodeContextMenu(clientX, clientY, node) {
-    if (!this.contextMenuElement) {
-      const menu = document.createElement('div');
-      menu.style.position = 'fixed';
-      menu.style.zIndex = '1000';
-      menu.style.background = '#2a2a2a';
-      menu.style.border = '1px solid #4a90e2';
-      menu.style.borderRadius = '6px';
-      menu.style.padding = '4px';
-      menu.style.minWidth = '120px';
-      menu.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.4)';
-      menu.style.display = 'none';
-
-      const deleteButton = document.createElement('button');
-      deleteButton.type = 'button';
-      deleteButton.style.width = '100%';
-      deleteButton.style.border = 'none';
-      deleteButton.style.borderRadius = '4px';
-      deleteButton.style.padding = '8px 10px';
-      deleteButton.style.background = 'transparent';
-      deleteButton.style.color = '#ff7d7d';
-      deleteButton.style.textAlign = 'left';
-      deleteButton.style.cursor = 'pointer';
-      deleteButton.textContent = 'Delete node';
-
-      deleteButton.addEventListener('mouseenter', () => {
-        if (!deleteButton.disabled) {
-          deleteButton.style.background = '#3a3a3a';
-        }
-      });
-      deleteButton.addEventListener('mouseleave', () => {
-        deleteButton.style.background = 'transparent';
-      });
-
-      deleteButton.addEventListener('click', (event) => {
-        event.stopPropagation();
-        if (this.contextMenuConnection) {
-          this.removeConnection(this.contextMenuConnection, true);
-          this.hideContextMenu();
-          return;
-        }
-
-        if (!this.contextMenuNode) {
-          this.hideContextMenu();
-          return;
-        }
-
-        this.removeNode(this.contextMenuNode, true);
-        this.hideContextMenu();
-      });
-
-      menu.appendChild(deleteButton);
-      document.body.appendChild(menu);
-
-      this.contextMenuElement = menu;
-      this.contextMenuDeleteButton = deleteButton;
-    }
-
     this.contextMenuNode = node;
     this.contextMenuConnection = null;
+    this.contextMenuCanvasPosition = null;
     const isProtected = this.isNodeProtectedFromDeletion(node);
 
-    this.contextMenuDeleteButton.textContent = 'Delete node';
-    this.contextMenuDeleteButton.disabled = isProtected;
-    this.contextMenuDeleteButton.style.opacity = isProtected ? '0.45' : '1';
-    this.contextMenuDeleteButton.style.cursor = isProtected ? 'not-allowed' : 'pointer';
-
-    this.contextMenuElement.style.left = `${clientX}px`;
-    this.contextMenuElement.style.top = `${clientY}px`;
-    this.contextMenuElement.style.display = 'block';
+    this.showContextMenu(clientX, clientY, [
+      {
+        label: 'Delete node',
+        color: '#ff7d7d',
+        disabled: isProtected,
+        onClick: () => {
+          this.removeNode(node, true);
+          this.hideContextMenu();
+        }
+      }
+    ]);
   }
 
   showConnectionContextMenu(clientX, clientY, conn) {
-    if (!this.contextMenuElement) {
-      this.showNodeContextMenu(clientX, clientY, conn.fromNode);
-    }
-
     this.contextMenuNode = null;
     this.contextMenuConnection = conn;
-    this.contextMenuDeleteButton.disabled = false;
-    this.contextMenuDeleteButton.style.opacity = '1';
-    this.contextMenuDeleteButton.style.cursor = 'pointer';
-    this.contextMenuDeleteButton.textContent = 'Delete connection';
+    this.contextMenuCanvasPosition = null;
+
+    this.showContextMenu(clientX, clientY, [
+      {
+        label: 'Delete connection',
+        color: '#ff7d7d',
+        onClick: () => {
+          this.removeConnection(conn, true);
+          this.hideContextMenu();
+        }
+      }
+    ]);
+  }
+
+  showCanvasContextMenu(clientX, clientY, canvasPosition) {
+    this.contextMenuNode = null;
+    this.contextMenuConnection = null;
+    this.contextMenuCanvasPosition = canvasPosition;
+
+    this.showContextMenu(clientX, clientY, [
+      {
+        label: 'Add',
+        onClick: () => this.showAddNodesContextMenu(clientX, clientY)
+      }
+    ]);
+  }
+
+  showAddNodesContextMenu(clientX, clientY) {
+    const canvasPosition = this.contextMenuCanvasPosition
+      ? { ...this.contextMenuCanvasPosition }
+      : { x: 140, y: 120 };
+
+    this.showContextMenu(clientX, clientY, [
+      {
+        label: 'Back',
+        onClick: () => this.showCanvasContextMenu(clientX, clientY, canvasPosition)
+      },
+      {
+        label: 'Add Operator',
+        onClick: () => {
+          this.requestCanvasNodeAdd('operator', canvasPosition);
+          this.hideContextMenu();
+        }
+      },
+      {
+        label: 'Add Filter',
+        onClick: () => {
+          this.requestCanvasNodeAdd('filter', canvasPosition);
+          this.hideContextMenu();
+        }
+      }
+    ]);
+  }
+
+  requestCanvasNodeAdd(nodeType, canvasPosition) {
+    if (typeof this.onCanvasAddNodeRequested === 'function') {
+      this.onCanvasAddNodeRequested(nodeType, canvasPosition);
+      return;
+    }
+
+    emitToBackend({
+      type: 'ADD_NODE',
+      nodeType,
+      data: {
+        position: {
+          x: canvasPosition.x,
+          y: canvasPosition.y
+        }
+      }
+    });
+  }
+
+  ensureContextMenuElement() {
+    if (this.contextMenuElement) {
+      return;
+    }
+
+    const menu = document.createElement('div');
+    menu.style.position = 'fixed';
+    menu.style.zIndex = '1000';
+    menu.style.background = '#2a2a2a';
+    menu.style.border = '1px solid #4a90e2';
+    menu.style.borderRadius = '6px';
+    menu.style.padding = '4px';
+    menu.style.minWidth = '150px';
+    menu.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.4)';
+    menu.style.display = 'none';
+
+    const list = document.createElement('div');
+    menu.appendChild(list);
+    document.body.appendChild(menu);
+
+    this.contextMenuElement = menu;
+    this.contextMenuListElement = list;
+  }
+
+  showContextMenu(clientX, clientY, items) {
+    this.ensureContextMenuElement();
+
+    this.contextMenuListElement.innerHTML = '';
+
+    items.forEach((item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.style.width = '100%';
+      button.style.border = 'none';
+      button.style.borderRadius = '4px';
+      button.style.padding = '8px 10px';
+      button.style.background = 'transparent';
+      button.style.color = item.color || '#dde8f5';
+      button.style.textAlign = 'left';
+      button.style.cursor = item.disabled ? 'not-allowed' : 'pointer';
+      button.style.opacity = item.disabled ? '0.45' : '1';
+      button.textContent = item.label;
+      button.disabled = !!item.disabled;
+
+      button.addEventListener('mouseenter', () => {
+        if (!button.disabled) {
+          button.style.background = '#3a3a3a';
+        }
+      });
+
+      button.addEventListener('mouseleave', () => {
+        button.style.background = 'transparent';
+      });
+
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (button.disabled) {
+          return;
+        }
+
+        if (typeof item.onClick === 'function') {
+          item.onClick();
+        }
+      });
+
+      this.contextMenuListElement.appendChild(button);
+    });
 
     this.contextMenuElement.style.left = `${clientX}px`;
     this.contextMenuElement.style.top = `${clientY}px`;
@@ -536,9 +692,7 @@ export class NodeGraph {
     }
     this.contextMenuNode = null;
     this.contextMenuConnection = null;
-    if (this.contextMenuDeleteButton) {
-      this.contextMenuDeleteButton.textContent = 'Delete node';
-    }
+    this.contextMenuCanvasPosition = null;
   }
 
   isNodeProtectedFromDeletion(node) {
@@ -1102,6 +1256,7 @@ export class NodeGraph {
     panel.style.display = 'block';
     title.textContent = `${node.title} (ID: ${node.backendId})`;
     controls.innerHTML = '';
+    this.applyParameterPanelState();
 
     if (node instanceof OperatorNode || node instanceof FilterNode) {
       panel.classList.add('adsr-compact');
@@ -1178,6 +1333,7 @@ export class NodeGraph {
     this.createConnectionControl(controls, label, 'amount', conn.amount, min, max, step, conn);
 
     panel.style.display = 'block';
+    this.applyParameterPanelState();
   }
 
   createConnectionControl(container, label, paramName, value, min, max, step, conn) {

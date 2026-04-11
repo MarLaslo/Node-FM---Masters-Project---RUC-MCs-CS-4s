@@ -4,6 +4,55 @@
 #include "NodeFMWebViewPlugin/dsp/Output.h"
 #include "NodeFMWebViewPlugin/graph/GraphTypes.h"
 
+namespace
+{
+    enum class ParamKey
+    {
+        unknown,
+        frequencyRatio,
+        amplitude,
+        attack,
+        decay,
+        sustain,
+        release,
+        cutoff,
+        resonance,
+        envAmount,
+        filterType,
+        outGain
+    };
+
+    ParamKey resolveParamKey(const juce::String &rawParamName)
+    {
+        const auto key = rawParamName.toLowerCase();
+
+        if (key == "frequencyratio" || key == "ratio")
+            return ParamKey::frequencyRatio;
+        if (key == "amplitude" || key == "amp")
+            return ParamKey::amplitude;
+        if (key == "attack")
+            return ParamKey::attack;
+        if (key == "decay")
+            return ParamKey::decay;
+        if (key == "sustain")
+            return ParamKey::sustain;
+        if (key == "release")
+            return ParamKey::release;
+        if (key == "cutoff")
+            return ParamKey::cutoff;
+        if (key == "resonance" || key == "q")
+            return ParamKey::resonance;
+        if (key == "envamount" || key == "filterenvamount")
+            return ParamKey::envAmount;
+        if (key == "filtertype" || key == "mode")
+            return ParamKey::filterType;
+        if (key == "outgain")
+            return ParamKey::outGain;
+
+        return ParamKey::unknown;
+    }
+}
+
 nodefm_plugin::Synth::Synth()
 {
     sampleRate = 44100.0f;
@@ -25,12 +74,12 @@ void nodefm_plugin::Synth::render(float **outputBuffers, int sampleCount)
 {
     float *outputBufferLeft = outputBuffers[0];
     float *outputBufferRight = outputBuffers[1];
-    
+
     if (voice.note > 0 || voice.isEnvelopeActive())
     {
         // Process entire buffer at once for better performance
         voice.render(outputBufferLeft, sampleCount);
-        
+
         // Copy to right channel if it exists
         if (outputBufferRight != nullptr)
         {
@@ -39,7 +88,7 @@ void nodefm_plugin::Synth::render(float **outputBuffers, int sampleCount)
                 outputBufferRight[sample] = outputBufferLeft[sample];
             }
         }
-        
+
         // Clear the note once envelopes are done
         if (voice.note > 0 && !voice.isEnvelopeActive())
         {
@@ -58,7 +107,7 @@ void nodefm_plugin::Synth::render(float **outputBuffers, int sampleCount)
             }
         }
     }
-    
+
     protectYourEars(outputBufferLeft, sampleCount);
     protectYourEars(outputBufferRight, sampleCount);
 }
@@ -92,13 +141,13 @@ void nodefm_plugin::Synth::noteOn(int note, int velocity)
 {
     voice.note = note;
     float freq = 440.0f * std::exp2(float(note - 69) / 12.0f);
-    
+
     // Update all operators with the new note frequency
     voice.setNoteFrequency(freq);
-    
+
     // Trigger ADSR envelopes
     voice.noteOn();
-    
+
     DBG("Note On: " << note << " -> " << freq << " Hz (velocity: " << velocity << ")");
 }
 
@@ -113,24 +162,24 @@ void nodefm_plugin::Synth::noteOff(int note)
     }
 }
 
-nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String& nodeType, const juce::var& data)
+nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String &nodeType, const juce::var &data)
 {
     // Add node to the voice's graph
     if (!voice.graph)
     {
         voice.graph = std::make_shared<DSPGraph>();
     }
-    
+
     // Create the node based on type
     std::unique_ptr<DSPNode> node;
-    
+
     if (nodeType == "oscillator" || nodeType == "operator")
     {
         auto osc = std::make_unique<Oscillator>();
         osc->setSampleRate(sampleRate);
-        
+
         // Set parameters from data
-        if (auto* obj = data.getDynamicObject())
+        if (auto *obj = data.getDynamicObject())
         {
             // Frequency ratio (default 1.0 for carrier frequency)
             if (obj->hasProperty("frequencyRatio"))
@@ -139,7 +188,7 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String& n
                 osc->setFrequencyRatio(ratio);
                 DBG("  Setting frequency ratio: " << ratio);
             }
-            
+
             // Amplitude (default 0.5)
             if (obj->hasProperty("amplitude"))
             {
@@ -147,7 +196,7 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String& n
                 osc->setAmplitude(amp);
                 DBG("  Setting amplitude: " << amp);
             }
-            
+
             // ADSR Envelope parameters
             if (obj->hasProperty("attack"))
             {
@@ -155,21 +204,21 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String& n
                 osc->setAttack(attack);
                 DBG("  Setting attack: " << attack << " seconds");
             }
-            
+
             if (obj->hasProperty("decay"))
             {
                 float decay = obj->getProperty("decay");
                 osc->setDecay(decay);
                 DBG("  Setting decay: " << decay << " seconds");
             }
-            
+
             if (obj->hasProperty("sustain"))
             {
                 float sustain = obj->getProperty("sustain");
                 osc->setSustain(sustain);
                 DBG("  Setting sustain: " << sustain);
             }
-            
+
             if (obj->hasProperty("release"))
             {
                 float release = obj->getProperty("release");
@@ -177,7 +226,7 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String& n
                 DBG("  Setting release: " << release << " seconds");
             }
         }
-        
+
         node = std::move(osc);
     }
     else if (nodeType == "output")
@@ -189,7 +238,7 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String& n
         auto filter = std::make_unique<Filter>();
         filter->setSampleRate(sampleRate);
 
-        if (auto* obj = data.getDynamicObject())
+        if (auto *obj = data.getDynamicObject())
         {
             if (obj->hasProperty("cutoff"))
             {
@@ -257,18 +306,18 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String& n
 
         node = std::move(filter);
     }
-    
+
     if (node)
     {
         // Add to voice's graph
         NodeID newNodeID = voice.graph->addNode(std::move(node));
-        
+
         // Send ID back to UI
         DBG("Added " << nodeType << " node with ID: " << (int)newNodeID);
-        
+
         return newNodeID;
     }
-    
+
     return 0;
 }
 
@@ -292,14 +341,14 @@ bool nodefm_plugin::Synth::removeNodeFromGraph(NodeID nodeId)
     {
         voice.operatorNodeID = 0;
         const auto snapshot = voice.graph->createSnapshotVar(voice.outputNodeID, 0);
-        if (const auto* snapshotObj = snapshot.getDynamicObject())
+        if (const auto *snapshotObj = snapshot.getDynamicObject())
         {
             const auto nodesVar = snapshotObj->getProperty("nodes");
-            if (const auto* nodeArray = nodesVar.getArray())
+            if (const auto *nodeArray = nodesVar.getArray())
             {
-                for (const auto& nodeVar : *nodeArray)
+                for (const auto &nodeVar : *nodeArray)
                 {
-                    if (const auto* nodeObj = nodeVar.getDynamicObject())
+                    if (const auto *nodeObj = nodeVar.getDynamicObject())
                     {
                         const auto type = nodeObj->getProperty("type").toString().toLowerCase();
                         if (type == "operator" || type == "oscillator")
@@ -334,81 +383,76 @@ bool nodefm_plugin::Synth::removeConnection(NodeID sourceId, NodeID destId, Conn
     return voice.graph->removeConnection(sourceId, destId, type);
 }
 
-void nodefm_plugin::Synth::updateNodeParameter(NodeID nodeId, const juce::String& paramName, float value)
+void nodefm_plugin::Synth::updateNodeParameter(NodeID nodeId, const juce::String &paramName, float value)
 {
     if (!voice.graph)
         return;
-    
-    DSPNode* node = voice.graph->getNode(nodeId);
+
+    DSPNode *node = voice.graph->getNode(nodeId);
     if (!node)
     {
         DBG("WARNING: Node " << (int)nodeId << " not found");
         return;
     }
-    
-    if (auto* osc = dynamic_cast<Oscillator*>(node))
+
+    const auto paramKey = resolveParamKey(paramName);
+
+    if (auto *osc = dynamic_cast<Oscillator *>(node))
     {
-        if (paramName == "frequencyRatio" || paramName == "ratio")
+        switch (paramKey)
         {
+        case ParamKey::frequencyRatio:
             osc->setFrequencyRatio(value);
             DBG("Updated node " << (int)nodeId << " frequency ratio: " << value);
-        }
-        else if (paramName == "amplitude" || paramName == "amp")
-        {
+            break;
+        case ParamKey::amplitude:
             osc->setAmplitude(value);
             DBG("Updated node " << (int)nodeId << " amplitude: " << value);
-        }
-        else if (paramName == "attack")
-        {
+            break;
+        case ParamKey::attack:
             osc->setAttack(value);
             DBG("Updated node " << (int)nodeId << " attack: " << value << " seconds");
-        }
-        else if (paramName == "decay")
-        {
+            break;
+        case ParamKey::decay:
             osc->setDecay(value);
             DBG("Updated node " << (int)nodeId << " decay: " << value << " seconds");
-        }
-        else if (paramName == "sustain")
-        {
+            break;
+        case ParamKey::sustain:
             osc->setSustain(value);
             DBG("Updated node " << (int)nodeId << " sustain: " << value);
-        }
-        else if (paramName == "release")
-        {
+            break;
+        case ParamKey::release:
             osc->setRelease(value);
             DBG("Updated node " << (int)nodeId << " release: " << value << " seconds");
-        }
-        else
-        {
+            break;
+        default:
             DBG("WARNING: Unknown parameter '" << paramName << "' for node " << (int)nodeId);
+            break;
         }
     }
-    else
+    if (auto *filter = dynamic_cast<Filter *>(node))
     {
-        auto* filter = dynamic_cast<Filter*>(node);
         if (filter == nullptr)
         {
             DBG("WARNING: Node " << (int)nodeId << " is not an oscillator or filter");
             return;
         }
 
-        if (paramName == "cutoff")
+        switch (paramKey)
         {
+        case ParamKey::cutoff:
             filter->setCutoff(value);
             DBG("Updated filter node " << (int)nodeId << " cutoff: " << value << " Hz");
-        }
-        else if (paramName == "resonance" || paramName == "q")
-        {
+            break;
+        case ParamKey::resonance:
             filter->setResonance(value);
             DBG("Updated filter node " << (int)nodeId << " resonance: " << value);
-        }
-        else if (paramName == "envAmount" || paramName == "filterEnvAmount")
-        {
+            break;
+        case ParamKey::envAmount:
             filter->setEnvelopeAmount(value);
             DBG("Updated filter node " << (int)nodeId << " envelope amount: " << value << " Hz");
-        }
-        else if (paramName == "filterType" || paramName == "mode")
-        {
+            break;
+        case ParamKey::filterType:
             if (value <= 0.5f)
                 filter->setFilterMode(FilterMode::lowpass);
             else if (value <= 1.5f)
@@ -417,30 +461,35 @@ void nodefm_plugin::Synth::updateNodeParameter(NodeID nodeId, const juce::String
                 filter->setFilterMode(FilterMode::highpass);
 
             DBG("Updated filter node " << (int)nodeId << " mode index: " << value);
-        }
-        else if (paramName == "attack")
-        {
+            break;
+        case ParamKey::attack:
             filter->setAttack(value);
             DBG("Updated filter node " << (int)nodeId << " attack: " << value << " seconds");
-        }
-        else if (paramName == "decay")
-        {
+            break;
+        case ParamKey::decay:
             filter->setDecay(value);
             DBG("Updated filter node " << (int)nodeId << " decay: " << value << " seconds");
-        }
-        else if (paramName == "sustain")
-        {
+            break;
+        case ParamKey::sustain:
             filter->setSustain(value);
             DBG("Updated filter node " << (int)nodeId << " sustain: " << value);
-        }
-        else if (paramName == "release")
-        {
+            break;
+        case ParamKey::release:
             filter->setRelease(value);
             DBG("Updated filter node " << (int)nodeId << " release: " << value << " seconds");
-        }
-        else
-        {
+            break;
+        default:
             DBG("WARNING: Unknown parameter '" << paramName << "' for filter node " << (int)nodeId);
+            break;
+        }
+    }
+    if (auto *output = dynamic_cast<Output *>(node))
+    {
+        switch (paramKey)
+        {
+        case ParamKey::outGain:
+            output->setOutGain(value);
+            DBG("Updated output node " << (int)nodeId << " out gain: " << value << " seconds");
         }
     }
 }
@@ -472,12 +521,12 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::getOperatorNodeID() const
 nodefm_plugin::NodeID nodefm_plugin::Synth::clearGraph()
 {
     DBG("Synth: Clearing graph");
-    
+
     // Clear the graph
     if (voice.graph)
     {
         voice.graph->clearGraph();
-        
+
         // Recreate output node
         auto outputNode = std::make_unique<Output>();
         voice.outputNodeID = voice.graph->addNode(std::move(outputNode));
@@ -493,13 +542,13 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::clearGraph()
         operatorNode->setRelease(0.3f);
         voice.operatorNodeID = voice.graph->addNode(std::move(operatorNode));
         voice.graph->addConnection(voice.operatorNodeID, voice.outputNodeID, 1.0f, ConnectionType::gain);
-        
+
         DBG("Synth: Graph cleared, new output node ID: " << (int)voice.outputNodeID);
     }
-    
+
     // Reset voice state
     voice.note = 0;
-    
+
     return voice.outputNodeID;
 }
 
@@ -511,7 +560,7 @@ juce::XmlElement nodefm_plugin::Synth::createStateXml() const
     return state;
 }
 
-bool nodefm_plugin::Synth::loadStateXml(const juce::XmlElement& state)
+bool nodefm_plugin::Synth::loadStateXml(const juce::XmlElement &state)
 {
     if (!voice.graph)
         voice.graph = std::make_shared<DSPGraph>();
@@ -539,7 +588,7 @@ juce::var nodefm_plugin::Synth::createGraphSnapshotForUI() const
     if (!voice.graph)
     {
         juce::var emptySnapshot = new juce::DynamicObject();
-        auto* object = emptySnapshot.getDynamicObject();
+        auto *object = emptySnapshot.getDynamicObject();
         object->setProperty("nodes", juce::var(juce::Array<juce::var>()));
         object->setProperty("connections", juce::var(juce::Array<juce::var>()));
         object->setProperty("outputNodeId", 0);

@@ -24,10 +24,15 @@ export class AdsrPanel {
       this.drawEnvelope(envelopeCanvas, node);
     };
 
-    this.createKnobControl(knobGrid, 'Attack', 'attack', node.attack || 0.01, 0.001, 2, node, redrawEnvelope);
-    this.createKnobControl(knobGrid, 'Decay', 'decay', node.decay || 0.1, 0.001, 2, node, redrawEnvelope);
-    this.createKnobControl(knobGrid, 'Sustain', 'sustain', node.sustain || 0.7, 0, 1, node, redrawEnvelope);
-    this.createKnobControl(knobGrid, 'Release', 'release', node.release || 0.3, 0.001, 5, node, redrawEnvelope);
+    const attackValue = Number.isFinite(node.attack) ? node.attack : 0.01;
+    const decayValue = Number.isFinite(node.decay) ? node.decay : 0.1;
+    const sustainValue = Number.isFinite(node.sustain) ? node.sustain : 0.7;
+    const releaseValue = Number.isFinite(node.release) ? node.release : 0.3;
+
+    this.createKnobControl(knobGrid, 'Attack', 'attack', attackValue, 0.001, 2, node, redrawEnvelope);
+    this.createKnobControl(knobGrid, 'Decay', 'decay', decayValue, 0.001, 2, node, redrawEnvelope);
+    this.createKnobControl(knobGrid, 'Sustain', 'sustain', sustainValue, 0, 1, node, redrawEnvelope);
+    this.createKnobControl(knobGrid, 'Release', 'release', releaseValue, 0.001, 5, node, redrawEnvelope);
 
     redrawEnvelope();
     requestAnimationFrame(redrawEnvelope);
@@ -171,18 +176,20 @@ export class AdsrPanel {
       return -135 + normalized * 270;
     };
 
-    const commitValue = (newValue) => {
+    const commitValue = (newValue, emitUpdate = true) => {
       currentValue = toNumber(newValue);
       node[paramName] = currentValue;
       valueElem.textContent = this.formatValue(currentValue, paramName);
       knob.style.setProperty('--knob-angle', `${normalizedAngle(currentValue)}deg`);
-      this.emitNodeParameterUpdate(node, paramName, currentValue);
+      if (emitUpdate) {
+        this.emitNodeParameterUpdate(node, paramName, currentValue);
+      }
       if (typeof onChange === 'function') {
         onChange();
       }
     };
 
-    commitValue(currentValue);
+    commitValue(currentValue, false);
 
     knob.addEventListener('mousedown', (event) => {
       event.preventDefault();

@@ -13,8 +13,9 @@ namespace nodefm_plugin
 #endif
           )
     {
+        initialiseSpectrumRanges();
         for (auto& bin : spectrumBins)
-            bin.store(0.0f);
+            bin.store(0.0f, std::memory_order_relaxed);
     }
 
     AudioPluginAudioProcessor::~AudioPluginAudioProcessor()
@@ -94,7 +95,7 @@ namespace nodefm_plugin
         analyserFifo.fill(0.0f);
         analyserFftData.fill(0.0f);
         for (auto& bin : spectrumBins)
-            bin.store(0.0f);
+            bin.store(0.0f, std::memory_order_relaxed);
         reset();
     }
 
@@ -274,9 +275,35 @@ namespace nodefm_plugin
         juce::Array<juce::var> bins;
         bins.ensureStorageAllocated(spectrumBinCount);
         for (const auto& bin : spectrumBins)
-            bins.add(bin.load());
+            bins.add(bin.load(std::memory_order_relaxed));
 
         return juce::var(bins);
+    }
+
+    void AudioPluginAudioProcessor::initialiseSpectrumRanges() noexcept
+    {
+        const int nyquistBin = fftSize / 2;
+
+        for (int i = 0; i < spectrumBinCount; ++i)
+        {
+            const float startNorm = static_cast<float>(i) / static_cast<float>(spectrumBinCount);
+            const float endNorm = static_cast<float>(i + 1) / static_cast<float>(spectrumBinCount);
+
+            const int startBin = juce::jlimit(
+                1,
+                nyquistBin - 1,
+                static_cast<int>((startNorm * startNorm) * static_cast<float>(nyquistBin - 1))
+            );
+
+            const int endBin = juce::jlimit(
+                startBin + 1,
+                nyquistBin,
+                static_cast<int>((endNorm * endNorm) * static_cast<float>(nyquistBin))
+            );
+
+            spectrumStartBins[(size_t)i] = startBin;
+            spectrumEndBins[(size_t)i] = endBin;
+        }
     }
 
     void AudioPluginAudioProcessor::pushNextSampleForAnalyser(float sample) noexcept
@@ -306,15 +333,10 @@ namespace nodefm_plugin
         constexpr float smoothKeep = 0.82f;
         constexpr float smoothAdd = 0.18f;
 
-        const int nyquistBin = fftSize / 2;
-
         for (int i = 0; i < spectrumBinCount; ++i)
         {
-            const float startNorm = static_cast<float>(i) / static_cast<float>(spectrumBinCount);
-            const float endNorm = static_cast<float>(i + 1) / static_cast<float>(spectrumBinCount);
-
-            int startBin = juce::jlimit(1, nyquistBin - 1, static_cast<int>(std::pow(startNorm, 2.0f) * static_cast<float>(nyquistBin - 1)));
-            int endBin = juce::jlimit(startBin + 1, nyquistBin, static_cast<int>(std::pow(endNorm, 2.0f) * static_cast<float>(nyquistBin)));
+            const int startBin = spectrumStartBins[(size_t)i];
+            const int endBin = spectrumEndBins[(size_t)i];
 
             float peak = 0.0f;
             for (int bin = startBin; bin < endBin; ++bin)
@@ -323,8 +345,8 @@ namespace nodefm_plugin
             const float db = juce::Decibels::gainToDecibels(peak / static_cast<float>(fftSize), minDb);
             const float normalized = juce::jlimit(0.0f, 1.0f, juce::jmap(db, minDb, maxDb, 0.0f, 1.0f));
 
-            const float previous = spectrumBins[(size_t)i].load();
-            spectrumBins[(size_t)i].store(previous * smoothKeep + normalized * smoothAdd);
+            const float previous = spectrumBins[(size_t)i].load(std::memory_order_relaxed);
+            spectrumBins[(size_t)i].store(previous * smoothKeep + normalized * smoothAdd, std::memory_order_relaxed);
         }
     }
 

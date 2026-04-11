@@ -1,3 +1,18 @@
+import { emitToBackend } from '../api/backendApi.js';
+
+const KNOB_STYLE = {
+  bodyFill: '#2f2f2f',
+  hoverStroke: '#ff9800',
+  stroke: '#4a90e2',
+  ringBackground: '#444',
+  ringValue: '#6ab0f3',
+  pointer: '#ffffff',
+  labelColor: '#aaaaaa',
+  labelFont: '9px monospace',
+  valueColor: '#6ab0f3',
+  valueFont: 'bold 10px monospace'
+};
+
 export class Node {
   constructor(title, x, y) {
     this.title = title;
@@ -86,5 +101,92 @@ export class Node {
   drawParameters(ctx, isHovered = false) {
     void ctx;
     void isHovered;
+  }
+
+  getKnobs() {
+    return [];
+  }
+
+  getKnobAt(x, y) {
+    for (const knob of this.getKnobs()) {
+      const dx = x - knob.x;
+      const dy = y - knob.y;
+      if (Math.sqrt(dx * dx + dy * dy) <= knob.radius + 3) {
+        return knob;
+      }
+    }
+    return null;
+  }
+
+  onParameterClick(x, y, graph) {
+    const knob = this.getKnobAt(x, y);
+    if (!knob) {
+      return false;
+    }
+
+    graph.beginKnobAdjustment(this, knob, y);
+    return true;
+  }
+
+  updateParameter(paramName, value) {
+    if (!this.backendId) {
+      return;
+    }
+
+    emitToBackend({
+      type: 'UPDATE_NODE_PARAMETER',
+      data: {
+        nodeId: this.backendId,
+        paramName,
+        value
+      }
+    });
+  }
+
+  drawKnob(ctx, knob, isHovered) {
+    const normalized = (knob.value - knob.min) / (knob.max - knob.min);
+    const startAngle = Math.PI * 0.75;
+    const sweep = Math.PI * 1.5;
+    const valueAngle = startAngle + normalized * sweep;
+
+    ctx.beginPath();
+    ctx.arc(knob.x, knob.y, knob.radius, 0, Math.PI * 2);
+    ctx.fillStyle = KNOB_STYLE.bodyFill;
+    ctx.fill();
+    ctx.strokeStyle = isHovered ? KNOB_STYLE.hoverStroke : KNOB_STYLE.stroke;
+    ctx.lineWidth = isHovered ? 2 : 1;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(knob.x, knob.y, knob.radius + 3, startAngle, startAngle + sweep);
+    ctx.strokeStyle = KNOB_STYLE.ringBackground;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(knob.x, knob.y, knob.radius + 3, startAngle, valueAngle);
+    ctx.strokeStyle = KNOB_STYLE.ringValue;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    const pointerLen = knob.radius - 4;
+    ctx.beginPath();
+    ctx.moveTo(knob.x, knob.y);
+    ctx.lineTo(
+      knob.x + Math.cos(valueAngle) * pointerLen,
+      knob.y + Math.sin(valueAngle) * pointerLen
+    );
+    ctx.strokeStyle = KNOB_STYLE.pointer;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = KNOB_STYLE.labelColor;
+    ctx.font = KNOB_STYLE.labelFont;
+    ctx.textAlign = 'center';
+    ctx.fillText(knob.label, knob.x, knob.y - knob.radius - 7);
+
+    ctx.fillStyle = KNOB_STYLE.valueColor;
+    ctx.font = KNOB_STYLE.valueFont;
+    ctx.fillText(knob.valueText || knob.value.toFixed(2), knob.x, knob.y + knob.radius + 12);
   }
 }

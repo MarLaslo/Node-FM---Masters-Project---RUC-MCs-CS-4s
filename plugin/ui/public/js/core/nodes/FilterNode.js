@@ -1,4 +1,3 @@
-import { emitToBackend } from '../backendApi.js';
 import { Node } from './Node.js';
 
 export class FilterNode extends Node {
@@ -62,74 +61,6 @@ export class FilterNode extends Node {
     ];
   }
 
-  getKnobAt(x, y) {
-    for (const knob of this.getKnobs()) {
-      const dx = x - knob.x;
-      const dy = y - knob.y;
-      if (Math.sqrt(dx * dx + dy * dy) <= knob.radius + 3) {
-        return knob;
-      }
-    }
-    return null;
-  }
-
-  onParameterClick(x, y, graph) {
-    const knob = this.getKnobAt(x, y);
-    if (!knob) {
-      return false;
-    }
-
-    graph.beginKnobAdjustment(this, knob, y);
-    return true;
-  }
-
-  drawKnob(ctx, knob, isHovered) {
-    const normalized = (knob.value - knob.min) / (knob.max - knob.min);
-    const startAngle = Math.PI * 0.75;
-    const sweep = Math.PI * 1.5;
-    const valueAngle = startAngle + normalized * sweep;
-
-    ctx.beginPath();
-    ctx.arc(knob.x, knob.y, knob.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#2a2f34';
-    ctx.fill();
-    ctx.strokeStyle = isHovered ? '#ffb347' : '#5fb3ff';
-    ctx.lineWidth = isHovered ? 2 : 1;
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(knob.x, knob.y, knob.radius + 3, startAngle, startAngle + sweep);
-    ctx.strokeStyle = '#46515a';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(knob.x, knob.y, knob.radius + 3, startAngle, valueAngle);
-    ctx.strokeStyle = '#7ac7ff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    const pointerLen = knob.radius - 4;
-    ctx.beginPath();
-    ctx.moveTo(knob.x, knob.y);
-    ctx.lineTo(
-      knob.x + Math.cos(valueAngle) * pointerLen,
-      knob.y + Math.sin(valueAngle) * pointerLen
-    );
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.fillStyle = '#aeb9c2';
-    ctx.font = '9px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(knob.label, knob.x, knob.y - knob.radius - 7);
-
-    ctx.fillStyle = '#7ac7ff';
-    ctx.font = 'bold 9px monospace';
-    ctx.fillText(knob.valueText || knob.value.toFixed(2), knob.x, knob.y + knob.radius + 12);
-  }
-
   drawParameters(ctx, hoveredKnobName = null) {
     ctx.fillStyle = '#1f2429';
     ctx.fillRect(this.x + 5, this.y + 40, this.width - 10, 50);
@@ -143,20 +74,5 @@ export class FilterNode extends Node {
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'right';
     ctx.fillText(modeLabel, this.x + this.width - 8, this.y + 18);
-  }
-
-  updateParameter(paramName, value) {
-    if (!this.backendId) {
-      return;
-    }
-
-    emitToBackend({
-      type: 'UPDATE_NODE_PARAMETER',
-      data: {
-        nodeId: this.backendId,
-        paramName,
-        value
-      }
-    });
   }
 }

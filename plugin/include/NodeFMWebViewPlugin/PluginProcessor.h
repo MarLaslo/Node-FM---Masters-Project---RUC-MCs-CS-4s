@@ -74,11 +74,14 @@ namespace nodefm_plugin
         std::array<float, fftSize * 2> analyserFftData{};
         int analyserFifoIndex = 0;
         std::array<std::atomic<float>, spectrumBinCount> spectrumBins{};
+        std::array<int, spectrumBinCount> spectrumStartBins{};
+        std::array<int, spectrumBinCount> spectrumEndBins{};
 
         void splitBufferByEvents(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages);
         void handleMIDI(uint8_t data0, u_int8_t data1, u_int8_t data2);
         void render(juce::AudioBuffer<float> &buffer, int sampleCount, int bufferOffset);
         void pushNextSampleForAnalyser(float sample) noexcept;
+        void initialiseSpectrumRanges() noexcept;
         void updateAnalyserSpectrum() noexcept;
         //==============================================================================
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)

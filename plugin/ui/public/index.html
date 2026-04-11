@@ -12,25 +12,93 @@
         overflow: hidden;
       }
       #toolbar {
-        background: #2c2c2c;
-        padding: 12px;
-        color: white;
+        background: linear-gradient(180deg, #2a3240 0%, #1f2632 100%);
+        padding: 10px 12px;
+        color: #e8f0fb;
         display: flex;
-        gap: 10px;
+        gap: 14px;
         align-items: center;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+        border-bottom: 1px solid #3b475c;
       }
+
+      .toolbar-title {
+        margin: 0;
+        font-size: 16px;
+        letter-spacing: 0.4px;
+        color: #d7e9ff;
+        min-width: 92px;
+      }
+
+      .toolbar-section {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 9px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+      }
+
+      .toolbar-section-label {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.9px;
+        opacity: 0.9;
+      }
+
+      .toolbar-section.graph-controls {
+        background: rgba(58, 116, 196, 0.14);
+        border-color: #3e6ea8;
+      }
+
+      .toolbar-section.graph-controls .toolbar-section-label {
+        color: #9ec8ff;
+      }
+
+      .toolbar-section.zoom-controls {
+        background: rgba(50, 168, 116, 0.14);
+        border-color: #2f8662;
+      }
+
+      .toolbar-section.zoom-controls .toolbar-section-label {
+        color: #98e0bf;
+      }
+
+      .toolbar-separator {
+        width: 1px;
+        height: 28px;
+        background: #4a5a73;
+      }
+
       #toolbar button {
-        background: #4a90e2;
+        background: #3f6ea8;
         color: white;
         border: none;
-        padding: 8px 16px;
+        padding: 7px 12px;
         cursor: pointer;
         border-radius: 4px;
-        font-weight: 500;
+        font-weight: 600;
+        font-size: 12px;
       }
       #toolbar button:hover {
-        background: #357abd;
+        background: #4e84c7;
+      }
+
+      .graph-controls button {
+        background: #3f6ea8;
+      }
+
+      .graph-controls button:hover {
+        background: #4f84c8;
+      }
+
+      .zoom-controls button {
+        background: #2f7d5d;
+      }
+
+      .zoom-controls button:hover {
+        background: #3a9770;
       }
       #canvas {
         display: block;
@@ -53,6 +121,16 @@
         display: none;
         box-shadow: 0 8px 24px rgba(0,0,0,0.45);
       }
+      #paramPanel.is-minimized {
+        left: auto;
+        right: 12px;
+        width: 260px;
+        max-width: calc(100vw - 24px);
+        padding-bottom: 8px;
+      }
+      #paramPanel.is-minimized #paramControls {
+        display: none;
+      }
       #paramPanel.adsr-compact {
         left: auto;
         right: 12px;
@@ -60,9 +138,36 @@
         max-width: calc(100vw - 24px);
         padding: 10px;
       }
-      #paramPanel.adsr-compact h4 {
-        margin: 0 0 7px 0;
+      #paramPanelHeader {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 8px 0;
+        border-bottom: 1px solid #374154;
         padding-bottom: 5px;
+      }
+      #paramPanelHeader #paramTitle {
+        margin: 0;
+        border-bottom: none;
+        padding-bottom: 0;
+        flex: 1;
+        min-width: 0;
+      }
+      #paramPanelToggle {
+        border: 1px solid #486286;
+        background: #1c2a3c;
+        color: #cfe3fa;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+        padding: 5px 9px;
+        cursor: pointer;
+      }
+      #paramPanelToggle:hover {
+        background: #24364f;
+      }
+      #paramPanel.adsr-compact h4 {
         font-size: 12px;
       }
       #paramPanel.adsr-compact h3 {
@@ -214,20 +319,33 @@
   </head>
   <body>
     <div id="toolbar">
-      <h3 style="margin: 0;">Node FM </h3>
-      <button id="addOperatorBtn">Add Operator</button>
-      <button id="addFilterBtn">Add Filter</button>
-      <button id="clearGraphBtn">Clear Graph</button>
-      <button id="zoomOutBtn">Zoom -</button>
-      <button id="zoomInBtn">Zoom +</button>
-      <button id="zoomResetBtn">Reset Zoom</button>
-      <span id="info" style="margin-left: auto;"></span>
+      <h3 class="toolbar-title">Node FM</h3>
+
+      <div class="toolbar-section graph-controls">
+        <span class="toolbar-section-label">Graph</span>
+        <button id="addOperatorBtn">Add Operator</button>
+        <button id="addFilterBtn">Add Filter</button>
+        <button id="clearGraphBtn">Clear Graph</button>
+      </div>
+
+      <div class="toolbar-separator" aria-hidden="true"></div>
+
+      <div class="toolbar-section zoom-controls">
+        <span class="toolbar-section-label">View Zoom</span>
+        <button id="zoomOutBtn">Zoom -</button>
+        <button id="zoomInBtn">Zoom +</button>
+        <button id="zoomResetBtn">Reset Zoom</button>
+      </div>
+
     </div>
     <canvas id="canvas"></canvas>
     
     <!-- Parameter Panel -->
     <div id="paramPanel">
-      <h4 id="paramTitle">Node Parameters</h4>
+      <div id="paramPanelHeader">
+        <h4 id="paramTitle">Node Parameters</h4>
+        <button id="paramPanelToggle" type="button" title="Minimize panel">_</button>
+      </div>
       <div id="paramControls">
         <!-- Dynamic controls will be inserted here -->
       </div>

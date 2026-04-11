@@ -1,5 +1,5 @@
 import * as Juce from './juce/index.js';
-import { BackendBridge } from './core/BackendBridge.js';
+import { BackendBridge } from './core/api/BackendBridge.js';
 import { AppNodeGraph } from './core/AppNodeGraph.js';
 
 void Juce;
@@ -16,6 +16,15 @@ backendBridge.initializeInfo();
 backendBridge.setup();
 
 graph.setCanvasDoubleClickHandler((position) => {
+  backendBridge.requestAddOperator(position);
+});
+
+graph.setCanvasAddNodeHandler((nodeType, position) => {
+  if (nodeType === 'filter') {
+    backendBridge.requestAddFilter(position);
+    return;
+  }
+
   backendBridge.requestAddOperator(position);
 });
 
