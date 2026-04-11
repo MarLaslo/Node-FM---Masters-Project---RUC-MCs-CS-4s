@@ -4,6 +4,7 @@ export class BackendBridge {
   constructor(graph) {
     this.graph = graph;
     this.pendingOperatorPositions = [];
+    this.pendingFilterPositions = [];
   }
 
   initializeInfo() {
@@ -46,6 +47,8 @@ export class BackendBridge {
           node = this.graph.createOutputNode(420, 100);
         } else if (nodeData.type === 'operator' || nodeData.type === 'oscillator') {
           node = this.graph.createOperatorNode(140, 100);
+        } else if (nodeData.type === 'filter') {
+          node = this.graph.createFilterNode(280, 100);
         }
 
         if (!node) {
@@ -62,6 +65,18 @@ export class BackendBridge {
           }
 
           const pendingPosition = this.pendingOperatorPositions.shift();
+          if (!backendPosition && pendingPosition) {
+            node.x = pendingPosition.x;
+            node.y = pendingPosition.y;
+          }
+        } else if (nodeData.type === 'filter') {
+          const backendPosition = nodeData.position || null;
+          if (backendPosition && Number.isFinite(backendPosition.x) && Number.isFinite(backendPosition.y)) {
+            node.x = backendPosition.x;
+            node.y = backendPosition.y;
+          }
+
+          const pendingPosition = this.pendingFilterPositions.shift();
           if (!backendPosition && pendingPosition) {
             node.x = pendingPosition.x;
             node.y = pendingPosition.y;
@@ -220,6 +235,39 @@ export class BackendBridge {
     emitToBackend({
       type: 'ADD_NODE',
       nodeType: 'operator',
+      data
+    });
+  }
+
+  requestAddFilter(position = null) {
+    const hasValidPosition = !!(
+      position
+      && Number.isFinite(position.x)
+      && Number.isFinite(position.y)
+    );
+
+    if (position && Number.isFinite(position.x) && Number.isFinite(position.y)) {
+      this.pendingFilterPositions.push({ x: position.x, y: position.y });
+    }
+
+    const data = {
+      cutoff: 1200,
+      resonance: 0.707,
+      envAmount: 2000,
+      filterType: 'lowpass',
+      attack: 0.01,
+      decay: 0.1,
+      sustain: 0.7,
+      release: 0.3
+    };
+
+    if (hasValidPosition) {
+      data.position = { x: position.x, y: position.y };
+    }
+
+    emitToBackend({
+      type: 'ADD_NODE',
+      nodeType: 'filter',
       data
     });
   }

@@ -23,6 +23,10 @@ document.getElementById('addOperatorBtn').addEventListener('click', () => {
   backendBridge.requestAddOperator();
 });
 
+document.getElementById('addFilterBtn').addEventListener('click', () => {
+  backendBridge.requestAddFilter();
+});
+
 document.getElementById('clearGraphBtn').addEventListener('click', () => {
   graph.clear();
 });

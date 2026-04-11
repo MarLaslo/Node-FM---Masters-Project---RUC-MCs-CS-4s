@@ -1,4 +1,5 @@
 #include "NodeFMWebViewPlugin/graph/DSPGraph.h"
+#include "NodeFMWebViewPlugin/dsp/Filter.h"
 #include "NodeFMWebViewPlugin/dsp/Oscillator.h"
 #include "NodeFMWebViewPlugin/dsp/Output.h"
 #include <algorithm>
@@ -100,12 +101,16 @@ namespace nodefm_plugin
 
     void DSPGraph::setSampleRate(float sr)
     {
-        // Pass sample rate to all oscillators
+        // Pass sample rate to all time-dependent nodes.
         for (auto& [id, node] : nodes)
         {
             if (auto* osc = dynamic_cast<Oscillator*>(node.get()))
             {
                 osc->setSampleRate(sr);
+            }
+            else if (auto* filter = dynamic_cast<Filter*>(node.get()))
+            {
+                filter->setSampleRate(sr);
             }
         }
     }
@@ -126,7 +131,7 @@ namespace nodefm_plugin
     
     void DSPGraph::noteOn()
     {
-        // Trigger note on for all oscillators
+        // Trigger note-on for all nodes with envelopes.
         DBG("Note On - Triggering ADSR envelopes");
         for (auto& [id, node] : nodes)
         {
@@ -134,12 +139,16 @@ namespace nodefm_plugin
             {
                 osc->noteOn();
             }
+            else if (auto* filter = dynamic_cast<Filter*>(node.get()))
+            {
+                filter->noteOn();
+            }
         }
     }
     
     void DSPGraph::noteOff()
     {
-        // Trigger note off for all oscillators
+        // Trigger note-off for all nodes with envelopes.
         DBG("Note Off - Releasing ADSR envelopes");
         for (auto& [id, node] : nodes)
         {
@@ -147,17 +156,28 @@ namespace nodefm_plugin
             {
                 osc->noteOff();
             }
+            else if (auto* filter = dynamic_cast<Filter*>(node.get()))
+            {
+                filter->noteOff();
+            }
         }
     }
     
     bool DSPGraph::isAnyEnvelopeActive() const
     {
-        // Check if any oscillator's envelope is still active
+        // Check if any node envelope is still active.
         for (const auto& [id, node] : nodes)
         {
             if (const auto* osc = dynamic_cast<const Oscillator*>(node.get()))
             {
                 if (osc->envelope.isActive())
+                {
+                    return true;
+                }
+            }
+            else if (const auto* filter = dynamic_cast<const Filter*>(node.get()))
+            {
+                if (filter->isEnvelopeActive())
                 {
                     return true;
                 }
@@ -396,6 +416,20 @@ namespace nodefm_plugin
                 nodeElement.setAttribute("sustain", osc->envelope.getSustain());
                 nodeElement.setAttribute("release", osc->envelope.getRelease());
             }
+            else if (const auto* filter = dynamic_cast<const Filter*>(node.get()))
+            {
+                nodeElement.setAttribute("type", "filter");
+                nodeElement.setAttribute("cutoff", filter->getCutoff());
+                nodeElement.setAttribute("resonance", filter->getResonance());
+                nodeElement.setAttribute("mode", filter->getFilterMode() == FilterMode::lowpass ? "lowpass"
+                                                    : filter->getFilterMode() == FilterMode::bandpass ? "bandpass"
+                                                                                                : "highpass");
+                nodeElement.setAttribute("envAmount", filter->getEnvelopeAmount());
+                nodeElement.setAttribute("attack", filter->getEnvelope().getAttack());
+                nodeElement.setAttribute("decay", filter->getEnvelope().getDecay());
+                nodeElement.setAttribute("sustain", filter->getEnvelope().getSustain());
+                nodeElement.setAttribute("release", filter->getEnvelope().getRelease());
+            }
             else
             {
                 nodeElement.setAttribute("type", "unknown");
@@ -465,6 +499,27 @@ namespace nodefm_plugin
 
                     if (operatorNodeId == 0)
                         operatorNodeId = id;
+                }
+                else if (type == "filter")
+                {
+                    auto filter = std::make_unique<Filter>();
+                    filter->setCutoff(static_cast<float>(nodeElement->getDoubleAttribute("cutoff", 1200.0)));
+                    filter->setResonance(static_cast<float>(nodeElement->getDoubleAttribute("resonance", 0.707)));
+
+                    const auto modeText = nodeElement->getStringAttribute("mode", "lowpass").toLowerCase();
+                    if (modeText == "highpass")
+                        filter->setFilterMode(FilterMode::highpass);
+                    else if (modeText == "bandpass")
+                        filter->setFilterMode(FilterMode::bandpass);
+                    else
+                        filter->setFilterMode(FilterMode::lowpass);
+
+                    filter->setEnvelopeAmount(static_cast<float>(nodeElement->getDoubleAttribute("envAmount", 2000.0)));
+                    filter->setAttack(static_cast<float>(nodeElement->getDoubleAttribute("attack", 0.01)));
+                    filter->setDecay(static_cast<float>(nodeElement->getDoubleAttribute("decay", 0.1)));
+                    filter->setSustain(static_cast<float>(nodeElement->getDoubleAttribute("sustain", 0.7)));
+                    filter->setRelease(static_cast<float>(nodeElement->getDoubleAttribute("release", 0.3)));
+                    node = std::move(filter);
                 }
 
                 if (node != nullptr)
@@ -553,6 +608,24 @@ namespace nodefm_plugin
                 params->setProperty("decay", osc->envelope.getDecay());
                 params->setProperty("sustain", osc->envelope.getSustain());
                 params->setProperty("release", osc->envelope.getRelease());
+                nodeObject->setProperty("data", parameterData);
+            }
+            else if (const auto* filter = dynamic_cast<const Filter*>(node.get()))
+            {
+                nodeObject->setProperty("type", "filter");
+
+                juce::var parameterData = new juce::DynamicObject();
+                auto* params = parameterData.getDynamicObject();
+                params->setProperty("cutoff", filter->getCutoff());
+                params->setProperty("resonance", filter->getResonance());
+                params->setProperty("filterType", filter->getFilterMode() == FilterMode::lowpass ? "lowpass"
+                                                    : filter->getFilterMode() == FilterMode::bandpass ? "bandpass"
+                                                                                                : "highpass");
+                params->setProperty("envAmount", filter->getEnvelopeAmount());
+                params->setProperty("attack", filter->getEnvelope().getAttack());
+                params->setProperty("decay", filter->getEnvelope().getDecay());
+                params->setProperty("sustain", filter->getEnvelope().getSustain());
+                params->setProperty("release", filter->getEnvelope().getRelease());
                 nodeObject->setProperty("data", parameterData);
             }
             else

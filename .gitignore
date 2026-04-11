@@ -1,6 +1,6 @@
 # Build outputs
 build/
-
+.DS_Store
 # Prerequisites
 *.d
 

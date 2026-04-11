@@ -1,5 +1,6 @@
 #include "NodeFMWebViewPlugin/Synth.h"
 #include "NodeFMWebViewPlugin/Utils.h"
+#include "NodeFMWebViewPlugin/dsp/Filter.h"
 #include "NodeFMWebViewPlugin/dsp/Output.h"
 #include "NodeFMWebViewPlugin/graph/GraphTypes.h"
 
@@ -183,6 +184,79 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String& n
     {
         node = std::make_unique<Output>();
     }
+    else if (nodeType == "filter")
+    {
+        auto filter = std::make_unique<Filter>();
+        filter->setSampleRate(sampleRate);
+
+        if (auto* obj = data.getDynamicObject())
+        {
+            if (obj->hasProperty("cutoff"))
+            {
+                const float cutoff = obj->getProperty("cutoff");
+                filter->setCutoff(cutoff);
+                DBG("  Setting cutoff: " << cutoff << " Hz");
+            }
+
+            if (obj->hasProperty("resonance"))
+            {
+                const float resonance = obj->getProperty("resonance");
+                filter->setResonance(resonance);
+                DBG("  Setting resonance: " << resonance);
+            }
+
+            if (obj->hasProperty("envAmount"))
+            {
+                const float envAmount = obj->getProperty("envAmount");
+                filter->setEnvelopeAmount(envAmount);
+                DBG("  Setting filter envelope amount: " << envAmount << " Hz");
+            }
+
+            const auto filterType = obj->getProperty("filterType").toString().toLowerCase();
+            if (filterType == "highpass" || filterType == "hp")
+            {
+                filter->setFilterMode(FilterMode::highpass);
+            }
+            else if (filterType == "bandpass" || filterType == "bp")
+            {
+                filter->setFilterMode(FilterMode::bandpass);
+            }
+            else
+            {
+                filter->setFilterMode(FilterMode::lowpass);
+            }
+
+            if (obj->hasProperty("attack"))
+            {
+                const float attack = obj->getProperty("attack");
+                filter->setAttack(attack);
+                DBG("  Setting filter attack: " << attack << " seconds");
+            }
+
+            if (obj->hasProperty("decay"))
+            {
+                const float decay = obj->getProperty("decay");
+                filter->setDecay(decay);
+                DBG("  Setting filter decay: " << decay << " seconds");
+            }
+
+            if (obj->hasProperty("sustain"))
+            {
+                const float sustain = obj->getProperty("sustain");
+                filter->setSustain(sustain);
+                DBG("  Setting filter sustain: " << sustain);
+            }
+
+            if (obj->hasProperty("release"))
+            {
+                const float release = obj->getProperty("release");
+                filter->setRelease(release);
+                DBG("  Setting filter release: " << release << " seconds");
+            }
+        }
+
+        node = std::move(filter);
+    }
     
     if (node)
     {
@@ -311,7 +385,63 @@ void nodefm_plugin::Synth::updateNodeParameter(NodeID nodeId, const juce::String
     }
     else
     {
-        DBG("WARNING: Node " << (int)nodeId << " is not an oscillator");
+        auto* filter = dynamic_cast<Filter*>(node);
+        if (filter == nullptr)
+        {
+            DBG("WARNING: Node " << (int)nodeId << " is not an oscillator or filter");
+            return;
+        }
+
+        if (paramName == "cutoff")
+        {
+            filter->setCutoff(value);
+            DBG("Updated filter node " << (int)nodeId << " cutoff: " << value << " Hz");
+        }
+        else if (paramName == "resonance" || paramName == "q")
+        {
+            filter->setResonance(value);
+            DBG("Updated filter node " << (int)nodeId << " resonance: " << value);
+        }
+        else if (paramName == "envAmount" || paramName == "filterEnvAmount")
+        {
+            filter->setEnvelopeAmount(value);
+            DBG("Updated filter node " << (int)nodeId << " envelope amount: " << value << " Hz");
+        }
+        else if (paramName == "filterType" || paramName == "mode")
+        {
+            if (value <= 0.5f)
+                filter->setFilterMode(FilterMode::lowpass);
+            else if (value <= 1.5f)
+                filter->setFilterMode(FilterMode::bandpass);
+            else
+                filter->setFilterMode(FilterMode::highpass);
+
+            DBG("Updated filter node " << (int)nodeId << " mode index: " << value);
+        }
+        else if (paramName == "attack")
+        {
+            filter->setAttack(value);
+            DBG("Updated filter node " << (int)nodeId << " attack: " << value << " seconds");
+        }
+        else if (paramName == "decay")
+        {
+            filter->setDecay(value);
+            DBG("Updated filter node " << (int)nodeId << " decay: " << value << " seconds");
+        }
+        else if (paramName == "sustain")
+        {
+            filter->setSustain(value);
+            DBG("Updated filter node " << (int)nodeId << " sustain: " << value);
+        }
+        else if (paramName == "release")
+        {
+            filter->setRelease(value);
+            DBG("Updated filter node " << (int)nodeId << " release: " << value << " seconds");
+        }
+        else
+        {
+            DBG("WARNING: Unknown parameter '" << paramName << "' for filter node " << (int)nodeId);
+        }
     }
 }
 

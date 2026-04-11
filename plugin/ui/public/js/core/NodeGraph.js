@@ -1,4 +1,5 @@
 import { emitToBackend } from './backendApi.js';
+import { FilterNode } from './nodes/FilterNode.js';
 import { OperatorNode } from './nodes/OperatorNode.js';
 import { AdsrPanel } from './ui/AdsrPanel.js';
 
@@ -284,7 +285,7 @@ export class NodeGraph {
     this.hoveredConnection = null;
 
     for (const node of this.nodes) {
-      if (node instanceof OperatorNode) {
+      if (node instanceof OperatorNode || node instanceof FilterNode) {
         const knob = node.getKnobAt(pos.x, pos.y);
         if (knob) {
           cursorStyle = 'pointer';
@@ -781,6 +782,9 @@ export class NodeGraph {
       } else if (nodeType === 'operator' || nodeType === 'oscillator') {
         node = this.createOperatorNode(140, 120 + defaultOperatorRow * 90);
         defaultOperatorRow += 1;
+      } else if (nodeType === 'filter') {
+        node = this.createFilterNode(280, 120 + defaultOperatorRow * 90);
+        defaultOperatorRow += 1;
       }
 
       if (!node) {
@@ -831,11 +835,32 @@ export class NodeGraph {
       if (params.sustain !== undefined) node.sustain = parseFloat(params.sustain);
       if (params.release !== undefined) node.release = parseFloat(params.release);
       node.ratio = node.frequencyRatio;
+    } else if (node instanceof FilterNode) {
+      if (params.cutoff !== undefined) node.cutoff = parseFloat(params.cutoff);
+      if (params.resonance !== undefined) node.resonance = parseFloat(params.resonance);
+      if (params.envAmount !== undefined) node.envAmount = parseFloat(params.envAmount);
+      if (params.attack !== undefined) node.attack = parseFloat(params.attack);
+      if (params.decay !== undefined) node.decay = parseFloat(params.decay);
+      if (params.sustain !== undefined) node.sustain = parseFloat(params.sustain);
+      if (params.release !== undefined) node.release = parseFloat(params.release);
+
+      const filterType = (params.filterType || '').toLowerCase();
+      if (filterType === 'highpass' || filterType === 'hp') {
+        node.filterType = 2;
+      } else if (filterType === 'bandpass' || filterType === 'bp') {
+        node.filterType = 1;
+      } else {
+        node.filterType = 0;
+      }
     }
   }
 
   createOperatorNode(x, y) {
     return new OperatorNode(x, y);
+  }
+
+  createFilterNode(x, y) {
+    return new FilterNode(x, y);
   }
 
   createOutputNode(x, y) {
@@ -871,7 +896,7 @@ export class NodeGraph {
     }
 
     this.nodes.forEach((node) => {
-      if (node instanceof OperatorNode) {
+      if (node instanceof OperatorNode || node instanceof FilterNode) {
         const hoveredKnobName = this.hoveredKnob && this.hoveredKnob.node === node
           ? this.hoveredKnob.paramName
           : null;
@@ -1078,12 +1103,59 @@ export class NodeGraph {
     title.textContent = `${node.title} (ID: ${node.backendId})`;
     controls.innerHTML = '';
 
-    if (node instanceof OperatorNode) {
+    if (node instanceof OperatorNode || node instanceof FilterNode) {
       panel.classList.add('adsr-compact');
       this.adsrPanel.render(controls, node);
+
+      if (node instanceof FilterNode) {
+        this.createNodeModeControl(controls, node);
+      }
     } else {
       panel.classList.remove('adsr-compact');
     }
+  }
+
+  createNodeModeControl(container, node) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'param-control';
+
+    const label = document.createElement('label');
+    label.textContent = 'Filter Mode';
+
+    const select = document.createElement('select');
+    select.style.width = '100%';
+    select.style.padding = '6px 8px';
+    select.style.marginTop = '6px';
+    select.style.background = '#18202b';
+    select.style.color = '#d4e4f4';
+    select.style.border = '1px solid #32465d';
+    select.style.borderRadius = '4px';
+
+    const modes = [
+      { label: 'Lowpass', value: 0 },
+      { label: 'Bandpass', value: 1 },
+      { label: 'Highpass', value: 2 }
+    ];
+
+    for (const mode of modes) {
+      const option = document.createElement('option');
+      option.textContent = mode.label;
+      option.value = String(mode.value);
+      select.appendChild(option);
+    }
+
+    const currentMode = Number.isFinite(node.filterType) ? node.filterType : 0;
+    select.value = String(Math.max(0, Math.min(2, Math.round(currentMode))));
+
+    select.addEventListener('change', () => {
+      const nextMode = parseInt(select.value, 10);
+      node.filterType = Number.isFinite(nextMode) ? nextMode : 0;
+      this.emitNodeParameterUpdate(node, 'filterType', node.filterType);
+    });
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(select);
+    container.appendChild(wrapper);
   }
 
   showConnectionPanel(conn) {
