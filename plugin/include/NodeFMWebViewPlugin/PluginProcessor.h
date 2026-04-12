@@ -60,6 +60,7 @@ namespace nodefm_plugin
         NodeID clearGraph();
         juce::var getGraphSnapshotForUI() const;
         juce::var getSpectrumForUI() const;
+        void updateOutputGain(float gain);
 
 
     private:
@@ -76,6 +77,7 @@ namespace nodefm_plugin
         std::array<std::atomic<float>, spectrumBinCount> spectrumBins{};
         std::array<int, spectrumBinCount> spectrumStartBins{};
         std::array<int, spectrumBinCount> spectrumEndBins{};
+        std::atomic<float> outputGain { 1.0f };
 
         void splitBufferByEvents(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages);
         void handleMIDI(uint8_t data0, u_int8_t data1, u_int8_t data2);

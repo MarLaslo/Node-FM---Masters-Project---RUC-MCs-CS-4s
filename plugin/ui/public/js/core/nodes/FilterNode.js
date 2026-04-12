@@ -10,6 +10,7 @@ export class FilterNode extends Node {
     this.resonance = 0.707;
     this.envAmount = 2000;
     this.filterType = 0; // 0=LP, 1=BP, 2=HP
+    this.slope = 0; // 0=12dB, 1=24dB
 
     this.attack = 0.01;
     this.decay = 0.1;

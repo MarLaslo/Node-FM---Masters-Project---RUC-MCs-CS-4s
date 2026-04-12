@@ -154,6 +154,8 @@ namespace nodefm_plugin
             for (int i = 0; i < sampleCount; ++i)
                 pushNextSampleForAnalyser(output[i]);
         }
+
+        buffer.applyGain(outputGain.load());
     }
 
     void AudioPluginAudioProcessor::splitBufferByEvents(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
@@ -237,6 +239,11 @@ namespace nodefm_plugin
     void AudioPluginAudioProcessor::updateConnectionAmount(NodeID sourceId, NodeID destId, float amount)
     {
         synth.updateConnectionAmount(sourceId, destId, amount);
+    }
+
+    void AudioPluginAudioProcessor::updateOutputGain(float gain)
+    {
+        outputGain.store(gain, std::memory_order_relaxed);
     }
 
     void AudioPluginAudioProcessor::sendEventToUI(const juce::String &eventType, const juce::var &data)

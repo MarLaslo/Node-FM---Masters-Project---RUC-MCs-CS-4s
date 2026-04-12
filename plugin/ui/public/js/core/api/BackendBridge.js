@@ -255,6 +255,7 @@ export class BackendBridge {
       resonance: 0.707,
       envAmount: 2000,
       filterType: 'lowpass',
+      slope: '12db',
       attack: 0.01,
       decay: 0.1,
       sustain: 0.7,
@@ -269,6 +270,13 @@ export class BackendBridge {
       type: 'ADD_NODE',
       nodeType: 'filter',
       data
+    });
+  }
+
+  requestOutputGainChange(gain) {
+    emitToBackend({
+      type: 'UPDATE_OUTPUT_GAIN',
+      data: { gain }
     });
   }
 }

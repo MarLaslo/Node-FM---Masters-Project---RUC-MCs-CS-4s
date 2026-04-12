@@ -19,6 +19,7 @@ namespace
         resonance,
         envAmount,
         filterType,
+        filterSlope,
         outGain
     };
 
@@ -46,6 +47,8 @@ namespace
             return ParamKey::envAmount;
         if (key == "filtertype" || key == "mode")
             return ParamKey::filterType;
+        if (key == "filterslope" || key == "slope" || key == "order" || key == "db" || key == "curves")
+            return ParamKey::filterSlope;
         if (key == "outgain")
             return ParamKey::outGain;
 
@@ -275,6 +278,12 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String &n
                 filter->setFilterMode(FilterMode::lowpass);
             }
 
+            const auto slopeText = obj->getProperty("slope").toString().toLowerCase();
+            if (slopeText == "24db" || slopeText == "24" || slopeText == "2")
+                filter->setSlope(FilterSlope::slope24dB);
+            else
+                filter->setSlope(FilterSlope::slope12dB);
+
             if (obj->hasProperty("attack"))
             {
                 const float attack = obj->getProperty("attack");
@@ -461,6 +470,10 @@ void nodefm_plugin::Synth::updateNodeParameter(NodeID nodeId, const juce::String
                 filter->setFilterMode(FilterMode::highpass);
 
             DBG("Updated filter node " << (int)nodeId << " mode index: " << value);
+            break;
+        case ParamKey::filterSlope:
+            filter->setSlope(value >= 0.5f ? FilterSlope::slope24dB : FilterSlope::slope12dB);
+            DBG("Updated filter node " << (int)nodeId << " slope index: " << value);
             break;
         case ParamKey::attack:
             filter->setAttack(value);

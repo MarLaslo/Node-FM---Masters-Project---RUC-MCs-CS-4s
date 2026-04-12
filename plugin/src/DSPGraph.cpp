@@ -424,6 +424,7 @@ namespace nodefm_plugin
                 nodeElement.setAttribute("mode", filter->getFilterMode() == FilterMode::lowpass ? "lowpass"
                                                     : filter->getFilterMode() == FilterMode::bandpass ? "bandpass"
                                                                                                 : "highpass");
+                nodeElement.setAttribute("slope", filter->getSlopeString());
                 nodeElement.setAttribute("envAmount", filter->getEnvelopeAmount());
                 nodeElement.setAttribute("attack", filter->getEnvelope().getAttack());
                 nodeElement.setAttribute("decay", filter->getEnvelope().getDecay());
@@ -513,6 +514,12 @@ namespace nodefm_plugin
                         filter->setFilterMode(FilterMode::bandpass);
                     else
                         filter->setFilterMode(FilterMode::lowpass);
+
+                    const auto slopeText = nodeElement->getStringAttribute("slope", "12db").toLowerCase();
+                    if (slopeText == "24db" || slopeText == "24")
+                        filter->setSlope(FilterSlope::slope24dB);
+                    else
+                        filter->setSlope(FilterSlope::slope12dB);
 
                     filter->setEnvelopeAmount(static_cast<float>(nodeElement->getDoubleAttribute("envAmount", 2000.0)));
                     filter->setAttack(static_cast<float>(nodeElement->getDoubleAttribute("attack", 0.01)));
@@ -621,6 +628,7 @@ namespace nodefm_plugin
                 params->setProperty("filterType", filter->getFilterMode() == FilterMode::lowpass ? "lowpass"
                                                     : filter->getFilterMode() == FilterMode::bandpass ? "bandpass"
                                                                                                 : "highpass");
+                params->setProperty("slope", filter->getSlopeString());
                 params->setProperty("envAmount", filter->getEnvelopeAmount());
                 params->setProperty("attack", filter->getEnvelope().getAttack());
                 params->setProperty("decay", filter->getEnvelope().getDecay());

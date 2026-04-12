@@ -276,6 +276,15 @@ namespace nodefm_plugin
             
             DBG("Graph cleared, new output node ID: " << (int)newOutputNodeID);
         }
+        else if (type == "UPDATE_OUTPUT_GAIN")
+        {
+            auto data = obj->getProperty("data");
+            if (auto* dataObj = data.getDynamicObject())
+            {
+                const float gain = dataObj->getProperty("gain").toString().getFloatValue();
+                processorRef.updateOutputGain(gain);
+            }
+        }
     }
 }
 

@@ -65,6 +65,15 @@
         color: #98e0bf;
       }
 
+      .toolbar-section.output-controls {
+        background: rgba(168, 50, 142, 0.14);
+        border-color: #862f74;
+      }
+
+      .toolbar-section.output-controls .toolbar-section-label {
+        color: #e098d3;
+      }
+
       .toolbar-separator {
         width: 1px;
         height: 28px;
@@ -335,6 +344,13 @@
         <button id="zoomOutBtn">Zoom -</button>
         <button id="zoomInBtn">Zoom +</button>
         <button id="zoomResetBtn">Reset Zoom</button>
+      </div>
+
+      <div class="toolbar-separator" aria-hidden="true"></div>
+
+      <div class="toolbar-section output-controls">
+        <span class="toolbar-section-label">Output Gain</span>
+        <input type="range" id="outputGainSlider" min="0" max="1" step="0.01" value="1">
       </div>
 
     </div>

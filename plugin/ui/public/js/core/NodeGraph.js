@@ -1006,6 +1006,9 @@ export class NodeGraph {
       } else {
         node.filterType = 0;
       }
+
+      const slope = String(params.slope || '').toLowerCase();
+      node.slope = (slope === '24db' || slope === '24' || slope === '1') ? 1 : 0;
     }
   }
 
@@ -1264,6 +1267,7 @@ export class NodeGraph {
 
       if (node instanceof FilterNode) {
         this.createNodeModeControl(controls, node);
+        this.createFilterSlopeControl(controls, node);
       }
     } else {
       panel.classList.remove('adsr-compact');
@@ -1306,6 +1310,48 @@ export class NodeGraph {
       const nextMode = parseInt(select.value, 10);
       node.filterType = Number.isFinite(nextMode) ? nextMode : 0;
       this.emitNodeParameterUpdate(node, 'filterType', node.filterType);
+    });
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(select);
+    container.appendChild(wrapper);
+  }
+
+  createFilterSlopeControl(container, node) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'param-control';
+
+    const label = document.createElement('label');
+    label.textContent = 'Filter Slope';
+
+    const select = document.createElement('select');
+    select.style.width = '100%';
+    select.style.padding = '6px 8px';
+    select.style.marginTop = '6px';
+    select.style.background = '#18202b';
+    select.style.color = '#d4e4f4';
+    select.style.border = '1px solid #32465d';
+    select.style.borderRadius = '4px';
+
+    const slopes = [
+      { label: '12 dB / Oct', value: 0 },
+      { label: '24 dB / Oct', value: 1 }
+    ];
+
+    for (const slope of slopes) {
+      const option = document.createElement('option');
+      option.textContent = slope.label;
+      option.value = String(slope.value);
+      select.appendChild(option);
+    }
+
+    const currentSlope = Number.isFinite(node.slope) ? node.slope : 0;
+    select.value = String(Math.max(0, Math.min(1, Math.round(currentSlope))));
+
+    select.addEventListener('change', () => {
+      const nextSlope = parseInt(select.value, 10);
+      node.slope = Number.isFinite(nextSlope) ? nextSlope : 0;
+      this.emitNodeParameterUpdate(node, 'slope', node.slope);
     });
 
     wrapper.appendChild(label);

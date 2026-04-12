@@ -6,6 +6,7 @@ export class OutputNode extends Node {
     this.inputs = ['Audio'];
     this.height = 98;
     this.spectrum = new Array(32).fill(0);
+    this.outGain = 0.5;
   }
 
   setSpectrum(values) {
@@ -25,6 +26,24 @@ export class OutputNode extends Node {
     }
   }
 
+    getKnobs() {
+    const knobY = this.y + 68;
+    return [
+      {
+        paramName: 'outGain',
+        label: 'Out Gain',
+        value: this.outGain,
+        min: 0,
+        max: 1,
+        sensitivity: 140,
+        x: this.x + 48,
+        y: knobY,
+        radius: 12,
+        valueText: this.outGain.toFixed(3)
+      }
+    ];
+  }
+
   drawParameters(ctx) {
     const padX = 8;
     const top = this.y + 45;
@@ -40,6 +59,7 @@ export class OutputNode extends Node {
     const barCount = this.spectrum.length;
     const gap = 1;
     const barWidth = Math.max(2, (width - gap * (barCount - 1)) / barCount);
+    
 
     for (let i = 0; i < barCount; i++) {
       const strength = Math.max(0, Math.min(1, this.spectrum[i]));

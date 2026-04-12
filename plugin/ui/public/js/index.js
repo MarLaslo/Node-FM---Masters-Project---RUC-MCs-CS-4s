@@ -52,4 +52,9 @@ document.getElementById('zoomResetBtn').addEventListener('click', () => {
   graph.resetZoom();
 });
 
+document.getElementById('outputGainSlider').addEventListener('input', (event) => {
+  const gain = parseFloat(event.target.value);
+  backendBridge.requestOutputGainChange(gain);
+});
+
 console.log('NodeFM Frontend initialized');
