@@ -23,6 +23,8 @@ namespace nodefm_plugin
         float inc{0.0f};             // Phase increment
         float phase{0.0f};
         ADSR envelope;
+        ADSR pitchEnvelope;
+        float pitchEnvAmountSemitones{0.0f};
         
         void setFrequency(float freq)
         {
@@ -40,6 +42,7 @@ namespace nodefm_plugin
         {
             sampleRate = sr;
             envelope.setSampleRate(sr);
+            pitchEnvelope.setSampleRate(sr);
             updateIncrement();
         }
         
@@ -58,11 +61,13 @@ namespace nodefm_plugin
         {
             noteVelocity = juce::jlimit(0.0f, 1.0f, velocity);
             envelope.noteOn();
+            pitchEnvelope.noteOn();
         }
         
         void noteOff()
         {
             envelope.noteOff();
+            pitchEnvelope.noteOff();
         }
         
         void setAttack(float seconds)
@@ -85,6 +90,41 @@ namespace nodefm_plugin
             envelope.setRelease(seconds);
         }
 
+        void setPitchEnvAmount(float semitones)
+        {
+            pitchEnvAmountSemitones = juce::jlimit(-48.0f, 48.0f, semitones);
+        }
+
+        float getPitchEnvAmount() const
+        {
+            return pitchEnvAmountSemitones;
+        }
+
+        void setPitchAttack(float seconds)
+        {
+            pitchEnvelope.setAttack(seconds);
+        }
+
+        void setPitchDecay(float seconds)
+        {
+            pitchEnvelope.setDecay(seconds);
+        }
+
+        void setPitchSustain(float level)
+        {
+            pitchEnvelope.setSustain(level);
+        }
+
+        void setPitchRelease(float seconds)
+        {
+            pitchEnvelope.setRelease(seconds);
+        }
+
+        const ADSR& getPitchEnvelope() const
+        {
+            return pitchEnvelope;
+        }
+
         void process(int numSamples) override
         {
             outputBuffer.setSize(1, numSamples, false, false, true);
@@ -103,6 +143,7 @@ namespace nodefm_plugin
             modulationInput = 0.0f;
             noteVelocity = 1.0f;
             envelope.reset();
+            pitchEnvelope.reset();
         }
 
         void setModulation(float value) override
@@ -125,7 +166,9 @@ namespace nodefm_plugin
         float nextSample()
         {
             float modulatedPhase = phase + modulationInput;
-            phase += inc;
+            const float pitchEnvLevel = pitchEnvelope.nextSample();
+            const float pitchRatio = std::exp2((pitchEnvAmountSemitones * pitchEnvLevel) / 12.0f);
+            phase += inc * pitchRatio;
             if (phase >= 1.0f)
                 phase -= 1.0f;
             

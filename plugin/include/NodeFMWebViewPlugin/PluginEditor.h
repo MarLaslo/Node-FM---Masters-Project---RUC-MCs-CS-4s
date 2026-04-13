@@ -11,6 +11,8 @@ namespace nodefm_plugin
         explicit AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor &);
         ~AudioPluginAudioProcessorEditor() override;
 
+        void prepareForShutdown();
+
         void resized() override;
         void sendMessageToJS(const juce::String& eventType, const juce::var& data);
 
@@ -26,6 +28,7 @@ namespace nodefm_plugin
         void handleMessageFromJS(const juce::String& message);
         void timerCallback() override;
         juce::WebBrowserComponent webView;
+        bool shuttingDown = false;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)
     };

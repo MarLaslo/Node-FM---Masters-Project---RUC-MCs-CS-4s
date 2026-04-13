@@ -46,6 +46,7 @@ export class NodeGraph {
     this.maxZoom = 2.4;
     this.zoomStep = 1.1;
     this.operatorAdsrExpandedById = this.loadOperatorAdsrExpandedState();
+    this.operatorEnvelopeModeById = this.loadOperatorEnvelopeModeState();
     this.filterAdsrExpandedById = this.loadFilterAdsrExpandedState();
 
     this.setupCanvas();
@@ -74,6 +75,32 @@ export class NodeGraph {
   saveOperatorAdsrExpandedState() {
     try {
       window.localStorage.setItem('nodefm.operatorAdsrExpandedById', JSON.stringify(this.operatorAdsrExpandedById));
+    } catch (error) {
+      // Ignore storage errors.
+    }
+  }
+
+  loadOperatorEnvelopeModeState() {
+    try {
+      const raw = window.localStorage.getItem('nodefm.operatorEnvelopeModeById');
+      if (!raw) {
+        return {};
+      }
+
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        return {};
+      }
+
+      return parsed;
+    } catch (error) {
+      return {};
+    }
+  }
+
+  saveOperatorEnvelopeModeState() {
+    try {
+      window.localStorage.setItem('nodefm.operatorEnvelopeModeById', JSON.stringify(this.operatorEnvelopeModeById));
     } catch (error) {
       // Ignore storage errors.
     }
@@ -134,6 +161,38 @@ export class NodeGraph {
 
     const stored = this.operatorAdsrExpandedById[key];
     node.setAdsrExpanded(stored === 1 || stored === true);
+  }
+
+  setOperatorEnvelopeMode(node, mode) {
+    if (!(node instanceof OperatorNode)) {
+      return;
+    }
+
+    const normalizedMode = mode === 'pitch' ? 'pitch' : 'volume';
+    node.setEnvelopeMode(normalizedMode);
+
+    if (node.backendId !== null && node.backendId !== undefined) {
+      this.operatorEnvelopeModeById[String(node.backendId)] = normalizedMode;
+      this.saveOperatorEnvelopeModeState();
+    }
+  }
+
+  applyOperatorEnvelopeModeState(node) {
+    if (!(node instanceof OperatorNode)) {
+      return;
+    }
+
+    const key = node.backendId !== null && node.backendId !== undefined
+      ? String(node.backendId)
+      : null;
+
+    if (!key) {
+      node.setEnvelopeMode('volume');
+      return;
+    }
+
+    const stored = this.operatorEnvelopeModeById[key];
+    node.setEnvelopeMode(stored === 'pitch' ? 'pitch' : 'volume');
   }
 
   setFilterAdsrExpanded(node, expanded) {
@@ -1002,6 +1061,19 @@ export class NodeGraph {
       });
     }
 
+    if (backendNodeId !== null && backendNodeId !== undefined) {
+      const idKey = String(backendNodeId);
+      if (node instanceof OperatorNode) {
+        delete this.operatorAdsrExpandedById[idKey];
+        delete this.operatorEnvelopeModeById[idKey];
+        this.saveOperatorAdsrExpandedState();
+        this.saveOperatorEnvelopeModeState();
+      } else if (node instanceof FilterNode) {
+        delete this.filterAdsrExpandedById[idKey];
+        this.saveFilterAdsrExpandedState();
+      }
+    }
+
     return true;
   }
 
@@ -1253,7 +1325,13 @@ export class NodeGraph {
       if (params.decay !== undefined) node.decay = parseFloat(params.decay);
       if (params.sustain !== undefined) node.sustain = parseFloat(params.sustain);
       if (params.release !== undefined) node.release = parseFloat(params.release);
+      if (params.pitchEnvAmount !== undefined) node.pitchEnvAmount = parseFloat(params.pitchEnvAmount);
+      if (params.pitchAttack !== undefined) node.pitchAttack = parseFloat(params.pitchAttack);
+      if (params.pitchDecay !== undefined) node.pitchDecay = parseFloat(params.pitchDecay);
+      if (params.pitchSustain !== undefined) node.pitchSustain = parseFloat(params.pitchSustain);
+      if (params.pitchRelease !== undefined) node.pitchRelease = parseFloat(params.pitchRelease);
       node.ratio = node.frequencyRatio;
+      this.applyOperatorEnvelopeModeState(node);
     } else if (node instanceof FilterNode) {
       if (params.cutoff !== undefined) node.cutoff = parseFloat(params.cutoff);
       if (params.resonance !== undefined) node.resonance = parseFloat(params.resonance);

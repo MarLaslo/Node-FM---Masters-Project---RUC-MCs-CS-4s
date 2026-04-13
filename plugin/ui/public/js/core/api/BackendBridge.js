@@ -32,6 +32,8 @@ export class BackendBridge {
     this.registerGraphStateSync();
     this.registerGraphCleared();
     this.registerSpectrumUpdate();
+    this.registerNodeParameterUpdated();
+    this.registerOutputGainSync();
 
     emitToBackend({ type: 'UI_READY' });
   }
@@ -208,6 +210,57 @@ export class BackendBridge {
     });
   }
 
+  registerNodeParameterUpdated() {
+    window.__JUCE__.backend.addEventListener('NODE_PARAMETER_UPDATED', (event) => {
+      try {
+        const payload = parseBackendEvent(event);
+        const data = payload.data || payload;
+        const nodeId = parseInt(data.nodeId, 10);
+        const paramName = (data.paramName || '').toString();
+        const value = Number(data.value);
+
+        if (!Number.isFinite(nodeId) || !paramName || !Number.isFinite(value)) {
+          return;
+        }
+
+        const node = this.graph.findNodeByBackendId(nodeId);
+        if (!node) {
+          return;
+        }
+
+        node[paramName] = value;
+        if (paramName === 'frequencyRatio') {
+          node.ratio = value;
+        }
+      } catch (error) {
+        console.error('Error handling NODE_PARAMETER_UPDATED:', error);
+      }
+    });
+  }
+
+  registerOutputGainSync() {
+    window.__JUCE__.backend.addEventListener('OUTPUT_GAIN_SYNC', (event) => {
+      try {
+        const payload = parseBackendEvent(event);
+        const data = payload.data ?? payload;
+        const gain = Number(data);
+        if (!Number.isFinite(gain)) {
+          return;
+        }
+
+        const slider = document.getElementById('outputGainSlider');
+        if (!slider) {
+          return;
+        }
+
+        const clamped = Math.min(1, Math.max(0, gain));
+        slider.value = clamped.toString();
+      } catch (error) {
+        console.error('Error handling OUTPUT_GAIN_SYNC:', error);
+      }
+    });
+  }
+
   requestAddOperator(position = null) {
     const hasValidPosition = !!(
       position
@@ -226,7 +279,12 @@ export class BackendBridge {
       attack: 0.01,
       decay: 0.1,
       sustain: 0.7,
-      release: 0.3
+      release: 0.3,
+      pitchEnvAmount: 0.0,
+      pitchAttack: 0.01,
+      pitchDecay: 0.1,
+      pitchSustain: 0.7,
+      pitchRelease: 0.3
     };
 
     if (hasValidPosition) {

@@ -417,6 +417,11 @@ namespace nodefm_plugin
                 nodeElement.setAttribute("decay", osc->envelope.getDecay());
                 nodeElement.setAttribute("sustain", osc->envelope.getSustain());
                 nodeElement.setAttribute("release", osc->envelope.getRelease());
+                nodeElement.setAttribute("pitchEnvAmount", osc->getPitchEnvAmount());
+                nodeElement.setAttribute("pitchAttack", osc->getPitchEnvelope().getAttack());
+                nodeElement.setAttribute("pitchDecay", osc->getPitchEnvelope().getDecay());
+                nodeElement.setAttribute("pitchSustain", osc->getPitchEnvelope().getSustain());
+                nodeElement.setAttribute("pitchRelease", osc->getPitchEnvelope().getRelease());
             }
             else if (const auto* filter = dynamic_cast<const Filter*>(node.get()))
             {
@@ -497,6 +502,11 @@ namespace nodefm_plugin
                     osc->setDecay(static_cast<float>(nodeElement->getDoubleAttribute("decay", 0.1)));
                     osc->setSustain(static_cast<float>(nodeElement->getDoubleAttribute("sustain", 0.7)));
                     osc->setRelease(static_cast<float>(nodeElement->getDoubleAttribute("release", 0.3)));
+                    osc->setPitchEnvAmount(static_cast<float>(nodeElement->getDoubleAttribute("pitchEnvAmount", 0.0)));
+                    osc->setPitchAttack(static_cast<float>(nodeElement->getDoubleAttribute("pitchAttack", 0.01)));
+                    osc->setPitchDecay(static_cast<float>(nodeElement->getDoubleAttribute("pitchDecay", 0.1)));
+                    osc->setPitchSustain(static_cast<float>(nodeElement->getDoubleAttribute("pitchSustain", 0.7)));
+                    osc->setPitchRelease(static_cast<float>(nodeElement->getDoubleAttribute("pitchRelease", 0.3)));
                     node = std::move(osc);
 
                     if (operatorNodeId == 0)
@@ -609,6 +619,11 @@ namespace nodefm_plugin
                 params->setProperty("decay", osc->envelope.getDecay());
                 params->setProperty("sustain", osc->envelope.getSustain());
                 params->setProperty("release", osc->envelope.getRelease());
+                params->setProperty("pitchEnvAmount", osc->getPitchEnvAmount());
+                params->setProperty("pitchAttack", osc->getPitchEnvelope().getAttack());
+                params->setProperty("pitchDecay", osc->getPitchEnvelope().getDecay());
+                params->setProperty("pitchSustain", osc->getPitchEnvelope().getSustain());
+                params->setProperty("pitchRelease", osc->getPitchEnvelope().getRelease());
                 nodeObject->setProperty("data", parameterData);
             }
             else if (const auto* filter = dynamic_cast<const Filter*>(node.get()))

@@ -15,6 +15,11 @@ namespace
         decay,
         sustain,
         release,
+        pitchEnvAmount,
+        pitchAttack,
+        pitchDecay,
+        pitchSustain,
+        pitchRelease,
         cutoff,
         resonance,
         envAmount,
@@ -40,6 +45,16 @@ namespace
             return ParamKey::sustain;
         if (key == "release")
             return ParamKey::release;
+        if (key == "pitchenvamount" || key == "pitchamount" || key == "pitchmodamount")
+            return ParamKey::pitchEnvAmount;
+        if (key == "pitchattack" || key == "pitchenvelopeattack")
+            return ParamKey::pitchAttack;
+        if (key == "pitchdecay" || key == "pitchenvelopedecay")
+            return ParamKey::pitchDecay;
+        if (key == "pitchsustain" || key == "pitchenvelopesustain")
+            return ParamKey::pitchSustain;
+        if (key == "pitchrelease" || key == "pitchenveloperelease")
+            return ParamKey::pitchRelease;
         if (key == "cutoff")
             return ParamKey::cutoff;
         if (key == "resonance" || key == "q")
@@ -238,6 +253,41 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String &n
                 float velocityAmount = obj->getProperty("velocityAmount");
                 osc->setVelocityAmount(velocityAmount);
                 DBG("  Setting velocity amount: " << velocityAmount);
+            }
+
+            if (obj->hasProperty("pitchEnvAmount"))
+            {
+                float pitchEnvAmount = obj->getProperty("pitchEnvAmount");
+                osc->setPitchEnvAmount(pitchEnvAmount);
+                DBG("  Setting pitch envelope amount: " << pitchEnvAmount << " semitones");
+            }
+
+            if (obj->hasProperty("pitchAttack"))
+            {
+                float pitchAttack = obj->getProperty("pitchAttack");
+                osc->setPitchAttack(pitchAttack);
+                DBG("  Setting pitch attack: " << pitchAttack << " seconds");
+            }
+
+            if (obj->hasProperty("pitchDecay"))
+            {
+                float pitchDecay = obj->getProperty("pitchDecay");
+                osc->setPitchDecay(pitchDecay);
+                DBG("  Setting pitch decay: " << pitchDecay << " seconds");
+            }
+
+            if (obj->hasProperty("pitchSustain"))
+            {
+                float pitchSustain = obj->getProperty("pitchSustain");
+                osc->setPitchSustain(pitchSustain);
+                DBG("  Setting pitch sustain: " << pitchSustain);
+            }
+
+            if (obj->hasProperty("pitchRelease"))
+            {
+                float pitchRelease = obj->getProperty("pitchRelease");
+                osc->setPitchRelease(pitchRelease);
+                DBG("  Setting pitch release: " << pitchRelease << " seconds");
             }
         }
 
@@ -442,6 +492,26 @@ void nodefm_plugin::Synth::updateNodeParameter(NodeID nodeId, const juce::String
             osc->setVelocityAmount(value);
             DBG("Updated node " << (int)nodeId << " velocity amount: " << value);
             break;
+        case ParamKey::pitchEnvAmount:
+            osc->setPitchEnvAmount(value);
+            DBG("Updated node " << (int)nodeId << " pitch envelope amount: " << value << " semitones");
+            break;
+        case ParamKey::pitchAttack:
+            osc->setPitchAttack(value);
+            DBG("Updated node " << (int)nodeId << " pitch attack: " << value << " seconds");
+            break;
+        case ParamKey::pitchDecay:
+            osc->setPitchDecay(value);
+            DBG("Updated node " << (int)nodeId << " pitch decay: " << value << " seconds");
+            break;
+        case ParamKey::pitchSustain:
+            osc->setPitchSustain(value);
+            DBG("Updated node " << (int)nodeId << " pitch sustain: " << value);
+            break;
+        case ParamKey::pitchRelease:
+            osc->setPitchRelease(value);
+            DBG("Updated node " << (int)nodeId << " pitch release: " << value << " seconds");
+            break;
         default:
             DBG("WARNING: Unknown parameter '" << paramName << "' for node " << (int)nodeId);
             break;
@@ -561,6 +631,11 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::clearGraph()
         operatorNode->setDecay(0.1f);
         operatorNode->setSustain(0.7f);
         operatorNode->setRelease(0.3f);
+        operatorNode->setPitchEnvAmount(0.0f);
+        operatorNode->setPitchAttack(0.01f);
+        operatorNode->setPitchDecay(0.1f);
+        operatorNode->setPitchSustain(0.7f);
+        operatorNode->setPitchRelease(0.3f);
         voice.operatorNodeID = voice.graph->addNode(std::move(operatorNode));
         voice.graph->addConnection(voice.operatorNodeID, voice.outputNodeID, 1.0f, ConnectionType::gain);
 

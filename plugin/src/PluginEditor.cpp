@@ -50,12 +50,30 @@ namespace nodefm_plugin
 
     AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(AudioPluginAudioProcessor &p)
         : AudioProcessorEditor(&p), processorRef(p),
-          webView{juce::WebBrowserComponent::Options{}.withResourceProvider([this](const auto &url)
-                                                                            { return getResource(url); })
-                      .withNativeIntegrationEnabled().withUserScript(R"(console.log("Backend loaded");)").withInitialisationData("info", "NodeFMWebView").withEventListener("messageFromJS", [this](const auto& event) {
-              if (event.isString())
-                  handleMessageFromJS(event.toString());
-          })}
+          webView{[safeThis = juce::Component::SafePointer<AudioPluginAudioProcessorEditor>(this)]
+          {
+              auto options = juce::WebBrowserComponent::Options{}
+                  .withResourceProvider([safeThis](const auto &url)
+                  {
+                      if (safeThis == nullptr || safeThis->shuttingDown)
+                          return std::optional<Resource>{};
+
+                      return safeThis->getResource(url);
+                  })
+                  .withNativeIntegrationEnabled()
+                  .withUserScript(R"(console.log("Backend loaded");)")
+                  .withInitialisationData("info", "NodeFMWebView")
+                  .withEventListener("messageFromJS", [safeThis](const auto& event)
+                  {
+                      if (safeThis == nullptr || safeThis->shuttingDown)
+                          return;
+
+                      if (event.isString())
+                          safeThis->handleMessageFromJS(event.toString());
+                  });
+
+              return options;
+          }()}
     {
         juce::ignoreUnused(processorRef);
 
@@ -78,12 +96,19 @@ namespace nodefm_plugin
 
     void AudioPluginAudioProcessorEditor::sendCurrentGraphToUI()
     {
+        if (shuttingDown)
+            return;
+
         sendMessageToJS("GRAPH_STATE_SYNC", processorRef.getGraphSnapshotForUI());
+        sendMessageToJS("OUTPUT_GAIN_SYNC", processorRef.getOutputGain());
         DBG("Sent current graph snapshot to UI");
     }
 
     void AudioPluginAudioProcessorEditor::handleMessageFromJS(const juce::String& message)
 {
+    if (shuttingDown)
+        return;
+
     auto json = juce::JSON::parse(message);
     if (auto* obj = json.getDynamicObject())
     {
@@ -290,6 +315,9 @@ namespace nodefm_plugin
 
     void AudioPluginAudioProcessorEditor::sendMessageToJS(const juce::String& eventType, const juce::var& data)
     {
+        if (shuttingDown)
+            return;
+
         juce::var message = new juce::DynamicObject();
         message.getDynamicObject()->setProperty("type", eventType);
         message.getDynamicObject()->setProperty("data", data);
@@ -300,15 +328,35 @@ namespace nodefm_plugin
 
     AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
     {
+        prepareForShutdown();
+    }
+
+    void AudioPluginAudioProcessorEditor::prepareForShutdown()
+    {
+        if (shuttingDown)
+            return;
+
+        shuttingDown = true;
         stopTimer();
+        webView.goToURL("about:blank");
     }
 
     void AudioPluginAudioProcessorEditor::timerCallback()
     {
-        if (!isShowing())
+        if (shuttingDown || !isShowing())
             return;
 
         sendMessageToJS("SPECTRUM_UPDATE", processorRef.getSpectrumForUI());
+
+        const auto automationUpdates = processorRef.popPendingAutomationUiUpdates();
+        for (const auto& update : automationUpdates)
+        {
+            juce::var payload = new juce::DynamicObject();
+            payload.getDynamicObject()->setProperty("nodeId", static_cast<int>(update.nodeId));
+            payload.getDynamicObject()->setProperty("paramName", update.paramName);
+            payload.getDynamicObject()->setProperty("value", update.value);
+            sendMessageToJS("NODE_PARAMETER_UPDATED", payload);
+        }
     }
 
     void AudioPluginAudioProcessorEditor::resized()

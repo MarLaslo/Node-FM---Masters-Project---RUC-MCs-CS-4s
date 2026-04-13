@@ -30,6 +30,11 @@ namespace nodefm_plugin
             operatorNode->setDecay(0.1f);
             operatorNode->setSustain(0.7f);
             operatorNode->setRelease(0.3f);
+            operatorNode->setPitchEnvAmount(0.0f);
+            operatorNode->setPitchAttack(0.01f);
+            operatorNode->setPitchDecay(0.1f);
+            operatorNode->setPitchSustain(0.7f);
+            operatorNode->setPitchRelease(0.3f);
             operatorNodeID = graph->addNode(std::move(operatorNode));
 
             graph->addConnection(operatorNodeID, outputNodeID, 1.0f, ConnectionType::gain);

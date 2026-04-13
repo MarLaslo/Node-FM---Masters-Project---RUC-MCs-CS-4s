@@ -3,12 +3,14 @@
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
+#include <vector>
 #include "Synth.h"
 #include "graph/GraphTypes.h"
 
 namespace nodefm_plugin
 {
-    class AudioPluginAudioProcessor final : public juce::AudioProcessor
+    class AudioPluginAudioProcessor final : public juce::AudioProcessor,
+                                            private juce::AudioProcessorParameter::Listener
     {
     public:
         //==============================================================================
@@ -61,9 +63,29 @@ namespace nodefm_plugin
         juce::var getGraphSnapshotForUI() const;
         juce::var getSpectrumForUI() const;
         void updateOutputGain(float gain);
+        float getOutputGain() const noexcept;
+
+        struct PendingAutomationUiUpdate
+        {
+            NodeID nodeId = 0;
+            juce::String paramName;
+            float value = 0.0f;
+        };
+
+        std::vector<PendingAutomationUiUpdate> popPendingAutomationUiUpdates();
 
 
     private:
+        struct LearnedParameterTarget
+        {
+            bool assigned = false;
+            NodeID nodeId = 0;
+            juce::String paramName;
+            juce::NormalisableRange<float> range { 0.0f, 1.0f };
+        };
+
+        static constexpr int maxAutomationSlots = 16;
+
         static constexpr int fftOrder = 10;
         static constexpr int fftSize = 1 << fftOrder;
         static constexpr int spectrumBinCount = 32;
@@ -78,6 +100,12 @@ namespace nodefm_plugin
         std::array<int, spectrumBinCount> spectrumStartBins{};
         std::array<int, spectrumBinCount> spectrumEndBins{};
         std::atomic<float> outputGain { 1.0f };
+        std::array<juce::AudioParameterFloat*, maxAutomationSlots> automationParameters{};
+        std::array<LearnedParameterTarget, maxAutomationSlots> learnedParameterTargets{};
+        juce::SpinLock automationLock;
+        juce::SpinLock pendingAutomationUpdatesLock;
+        std::vector<PendingAutomationUiUpdate> pendingAutomationUiUpdates;
+        std::atomic<bool> suppressAutomationCallbacks { false };
 
         void splitBufferByEvents(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages);
         void handleMIDI(uint8_t data0, u_int8_t data1, u_int8_t data2);
@@ -85,6 +113,19 @@ namespace nodefm_plugin
         void pushNextSampleForAnalyser(float sample) noexcept;
         void initialiseSpectrumRanges() noexcept;
         void updateAnalyserSpectrum() noexcept;
+        void initialiseAutomationParameters();
+        int findOrAssignAutomationSlot(NodeID nodeId, const juce::String& paramName, const juce::NormalisableRange<float>& range);
+        void pushNodeParameterToHost(NodeID nodeId, const juce::String& paramName, float value);
+        void applyAutomationSlotValue(int slotIndex, float normalizedValue);
+        void releaseAutomationMappingsForNode(NodeID nodeId);
+        void resetAutomationMappings();
+        juce::String buildAutomationLabel(NodeID nodeId, const juce::String& paramName) const;
+        juce::NormalisableRange<float> getRangeForParameterName(const juce::String& paramName) const;
+        std::unique_ptr<juce::XmlElement> createAutomationStateXml();
+        void loadAutomationStateXml(const juce::XmlElement* automationState);
+
+        void parameterValueChanged(int parameterIndex, float newValue) override;
+        void parameterGestureChanged(int parameterIndex, bool gestureIsStarting) override;
         //==============================================================================
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)
     };
