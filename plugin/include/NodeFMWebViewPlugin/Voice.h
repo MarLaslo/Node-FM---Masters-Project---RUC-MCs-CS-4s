@@ -57,11 +57,11 @@ namespace nodefm_plugin
             }
         }
         
-        void noteOn()
+        void noteOn(float velocity = 1.0f)
         {
             if (graph)
             {
-                graph->noteOn();
+                graph->noteOn(velocity);
             }
         }
         

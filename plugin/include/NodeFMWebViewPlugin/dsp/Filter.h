@@ -13,11 +13,53 @@ namespace nodefm_plugin
         highpass
     };
 
-    enum class FilterSlope
+    enum class FilterCurve
     {
-        slope12dB,
-        slope24dB
+        db12,
+        db24
     };
+
+    inline FilterMode filterModeFromString(const juce::String& modeText)
+    {
+        const auto normalized = modeText.toLowerCase();
+
+        if (normalized == "highpass" || normalized == "hp")
+            return FilterMode::highpass;
+        if (normalized == "bandpass" || normalized == "bp")
+            return FilterMode::bandpass;
+
+        return FilterMode::lowpass;
+    }
+
+    inline juce::String filterModeToString(FilterMode mode)
+    {
+        switch (mode)
+        {
+        case FilterMode::lowpass:
+            return "lowpass";
+        case FilterMode::bandpass:
+            return "bandpass";
+        case FilterMode::highpass:
+            return "highpass";
+        }
+
+        return "lowpass";
+    }
+
+    inline FilterCurve filterCurveFromString(const juce::String& curveText)
+    {
+        const auto normalized = curveText.toLowerCase();
+
+        if (normalized.contains("24"))
+            return FilterCurve::db24;
+
+        return FilterCurve::db12;
+    }
+
+    inline juce::String filterCurveToString(FilterCurve curve)
+    {
+        return curve == FilterCurve::db24 ? "24db" : "12db";
+    }
 
     class Filter : public DSPNode
     {
@@ -35,18 +77,16 @@ namespace nodefm_plugin
 
             for (int i = 0; i < numSamples; ++i)
             {
-                output[i] = processSingleSample(modulationInput);
+                output[i] = processSingleSample(inputSignal);
             }
         }
 
         void reset() override
         {
+            inputSignal = 0.0f;
             modulationInput = 0.0f;
-            ic1eqStage1 = 0.0f;
-            ic2eqStage1 = 0.0f;
-            ic1eqStage2 = 0.0f;
-            ic2eqStage2 = 0.0f;
-            smoothedCutoffHz = cutoffHz;
+            ic1eq = 0.0f;
+            ic2eq = 0.0f;
             envelope.reset();
             outputBuffer.clear();
         }
@@ -55,8 +95,6 @@ namespace nodefm_plugin
         {
             sampleRate = std::max(1.0f, sr);
             envelope.setSampleRate(sampleRate);
-            const float smoothingTimeSeconds = 0.0025f;
-            cutoffSmoothingCoeff = std::exp(-1.0f / (smoothingTimeSeconds * sampleRate));
         }
 
         void setCutoff(float hz)
@@ -74,9 +112,9 @@ namespace nodefm_plugin
             mode = newMode;
         }
 
-        void setSlope(FilterSlope newSlope)
+        void setFilterCurve(FilterCurve newCurve)
         {
-            slope = newSlope;
+            curve = newCurve;
         }
 
         void setEnvelopeAmount(float amountHz)
@@ -123,113 +161,68 @@ namespace nodefm_plugin
         float getResonance() const { return resonanceQ; }
         float getEnvelopeAmount() const { return envelopeAmountHz; }
         FilterMode getFilterMode() const { return mode; }
-        FilterSlope getSlope() const { return slope; }
+        FilterCurve getFilterCurve() const { return curve; }
         ADSR& getEnvelope() { return envelope; }
         const ADSR& getEnvelope() const { return envelope; }
-
-        juce::String getSlopeString() const
-        {
-            return slope == FilterSlope::slope24dB ? "24db" : "12db";
-        }
 
     private:
         float sampleRate{44100.0f};
         float cutoffHz{1200.0f};
-        float smoothedCutoffHz{1200.0f};
         float resonanceQ{0.707f};
         float envelopeAmountHz{2000.0f};
         FilterMode mode{FilterMode::lowpass};
-        FilterSlope slope{FilterSlope::slope12dB};
-        float cutoffSmoothingCoeff{0.995f};
+        FilterCurve curve{FilterCurve::db12};
 
-        float ic1eqStage1{0.0f};
-        float ic2eqStage1{0.0f};
-        float ic1eqStage2{0.0f};
-        float ic2eqStage2{0.0f};
+        float ic1eq{0.0f};
+        float ic2eq{0.0f};
+        float ic3eq{0.0f};
+        float ic4eq{0.0f};
         ADSR envelope;
 
-        struct StageOutputs
+        float processStage(float x, float g, float q, float& ic1, float& ic2)
         {
-            float lowpass{0.0f};
-            float bandpass{0.0f};
-            float highpass{0.0f};
-        };
-
-        static float selectModeOutput(const StageOutputs& outputs, FilterMode currentMode)
-        {
-            switch (currentMode)
-            {
-            case FilterMode::lowpass:
-                return outputs.lowpass;
-            case FilterMode::bandpass:
-                return outputs.bandpass;
-            case FilterMode::highpass:
-                return outputs.highpass;
-            }
-
-            return outputs.lowpass;
-        }
-
-        static bool isFinite(float value)
-        {
-            return std::isfinite(value);
-        }
-
-        static float limitResonanceNearNyquist(float requestedQ, float normalizedCutoff)
-        {
-            const float nyquistStress = std::clamp((normalizedCutoff - 0.35f) / 0.12f, 0.0f, 1.0f);
-            const float maxStableQ = juce::jmap(nyquistStress, 20.0f, 8.0f);
-            return std::min(requestedQ, maxStableQ);
-        }
-
-        StageOutputs processStage(float x, float normalizedCutoff, float q, float& ic1eq, float& ic2eq)
-        {
-            const float g = std::tan(juce::MathConstants<float>::pi * normalizedCutoff);
-            const float k = 1.0f / q;
+            const float k = 1.0f / std::max(0.1f, q);
             const float a1 = 1.0f / (1.0f + g * (g + k));
             const float a2 = g * a1;
             const float a3 = g * a2;
 
-            if (!isFinite(g) || !isFinite(a1) || !isFinite(a2) || !isFinite(a3))
-                return {};
+            const float v3 = x - ic2;
+            const float v1 = a1 * ic1 + a2 * v3;
+            const float v2 = ic2 + a2 * ic1 + a3 * v3;
 
-            const float v3 = x - ic2eq;
-            const float v1 = a1 * ic1eq + a2 * v3;
-            const float v2 = ic2eq + a2 * ic1eq + a3 * v3;
+            ic1 = 2.0f * v1 - ic1;
+            ic2 = 2.0f * v2 - ic2;
 
-            if (!isFinite(v1) || !isFinite(v2) || !isFinite(v3))
-                return {};
-
-            ic1eq = 2.0f * v1 - ic1eq;
-            ic2eq = 2.0f * v2 - ic2eq;
-
-            if (!isFinite(ic1eq) || !isFinite(ic2eq))
+            switch (mode)
             {
-                ic1eq = 0.0f;
-                ic2eq = 0.0f;
-                return {};
+            case FilterMode::lowpass:
+                return v2;
+            case FilterMode::bandpass:
+                return v1;
+            case FilterMode::highpass:
+                return v3 - k * v1;
             }
 
-            return {v2, v1, v3 - k * v1};
+            return v2;
         }
 
         float processSingleSample(float x)
         {
             const float envValue = envelope.nextSample();
-            const float maxCutoffHz = std::min(20000.0f, sampleRate * 0.45f);
-            const float targetCutoff = std::clamp(cutoffHz + envelopeAmountHz * envValue, 20.0f, maxCutoffHz);
-            smoothedCutoffHz = cutoffSmoothingCoeff * smoothedCutoffHz + (1.0f - cutoffSmoothingCoeff) * targetCutoff;
+            const float maxCutoff = std::max(20.0f, sampleRate * 0.45f);
+            const float modulatedCutoff = std::clamp(cutoffHz + envelopeAmountHz * envValue, 20.0f, maxCutoff);
+            const float normalizedCutoff = std::clamp(modulatedCutoff / sampleRate, 0.00045f, 0.45f);
 
-            const float normalizedCutoff = std::clamp(smoothedCutoffHz / sampleRate, 0.00045f, 0.47f);
-            const float safeQ = limitResonanceNearNyquist(resonanceQ, normalizedCutoff);
+            const float g = std::tan(juce::MathConstants<float>::pi * normalizedCutoff);
 
-            const auto stage1 = processStage(x, normalizedCutoff, safeQ, ic1eqStage1, ic2eqStage1);
-            if (slope == FilterSlope::slope12dB)
-                return selectModeOutput(stage1, mode);
+            float filtered = processStage(x, g, resonanceQ, ic1eq, ic2eq);
 
-            const auto cascadedInput = selectModeOutput(stage1, mode);
-            const auto stage2 = processStage(cascadedInput, normalizedCutoff, safeQ, ic1eqStage2, ic2eqStage2);
-            return selectModeOutput(stage2, mode);
+            if (curve == FilterCurve::db24)
+            {
+                filtered = processStage(filtered, g, resonanceQ, ic3eq, ic4eq);
+            }
+
+            return filtered;
         }
 
     };

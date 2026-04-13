@@ -129,7 +129,7 @@ namespace nodefm_plugin
         }
     }
     
-    void DSPGraph::noteOn()
+    void DSPGraph::noteOn(float velocity)
     {
         // Trigger note-on for all nodes with envelopes.
         DBG("Note On - Triggering ADSR envelopes");
@@ -137,7 +137,7 @@ namespace nodefm_plugin
         {
             if (auto* osc = dynamic_cast<Oscillator*>(node.get()))
             {
-                osc->noteOn();
+                osc->noteOn(velocity);
             }
             else if (auto* filter = dynamic_cast<Filter*>(node.get()))
             {
@@ -224,6 +224,7 @@ namespace nodefm_plugin
                     if (!node) continue;
                     
                     // Reset modulation input before applying connections
+                    node->resetInput();
                     node->resetModulation();
                     
                     // Apply input connections for this node
@@ -247,7 +248,7 @@ namespace nodefm_plugin
                                         if (conn.type == ConnectionType::modulation)
                                             node->addModulation(routedValue);
                                         else
-                                            node->addModulation(routedValue);
+                                            node->addInput(routedValue);
                                     }
                                 }
                             }
@@ -411,6 +412,7 @@ namespace nodefm_plugin
                 nodeElement.setAttribute("type", "operator");
                 nodeElement.setAttribute("frequencyRatio", osc->frequencyRatio);
                 nodeElement.setAttribute("amplitude", osc->amplitude);
+                nodeElement.setAttribute("velocityAmount", osc->velocityAmount);
                 nodeElement.setAttribute("attack", osc->envelope.getAttack());
                 nodeElement.setAttribute("decay", osc->envelope.getDecay());
                 nodeElement.setAttribute("sustain", osc->envelope.getSustain());
@@ -421,10 +423,8 @@ namespace nodefm_plugin
                 nodeElement.setAttribute("type", "filter");
                 nodeElement.setAttribute("cutoff", filter->getCutoff());
                 nodeElement.setAttribute("resonance", filter->getResonance());
-                nodeElement.setAttribute("mode", filter->getFilterMode() == FilterMode::lowpass ? "lowpass"
-                                                    : filter->getFilterMode() == FilterMode::bandpass ? "bandpass"
-                                                                                                : "highpass");
-                nodeElement.setAttribute("slope", filter->getSlopeString());
+                nodeElement.setAttribute("mode", filterModeToString(filter->getFilterMode()));
+                nodeElement.setAttribute("curve", filterCurveToString(filter->getFilterCurve()));
                 nodeElement.setAttribute("envAmount", filter->getEnvelopeAmount());
                 nodeElement.setAttribute("attack", filter->getEnvelope().getAttack());
                 nodeElement.setAttribute("decay", filter->getEnvelope().getDecay());
@@ -492,6 +492,7 @@ namespace nodefm_plugin
                     auto osc = std::make_unique<Oscillator>();
                     osc->setFrequencyRatio(static_cast<float>(nodeElement->getDoubleAttribute("frequencyRatio", 1.0)));
                     osc->setAmplitude(static_cast<float>(nodeElement->getDoubleAttribute("amplitude", 0.5)));
+                    osc->setVelocityAmount(static_cast<float>(nodeElement->getDoubleAttribute("velocityAmount", 1.0)));
                     osc->setAttack(static_cast<float>(nodeElement->getDoubleAttribute("attack", 0.01)));
                     osc->setDecay(static_cast<float>(nodeElement->getDoubleAttribute("decay", 0.1)));
                     osc->setSustain(static_cast<float>(nodeElement->getDoubleAttribute("sustain", 0.7)));
@@ -508,18 +509,10 @@ namespace nodefm_plugin
                     filter->setResonance(static_cast<float>(nodeElement->getDoubleAttribute("resonance", 0.707)));
 
                     const auto modeText = nodeElement->getStringAttribute("mode", "lowpass").toLowerCase();
-                    if (modeText == "highpass")
-                        filter->setFilterMode(FilterMode::highpass);
-                    else if (modeText == "bandpass")
-                        filter->setFilterMode(FilterMode::bandpass);
-                    else
-                        filter->setFilterMode(FilterMode::lowpass);
+                    filter->setFilterMode(filterModeFromString(modeText));
 
-                    const auto slopeText = nodeElement->getStringAttribute("slope", "12db").toLowerCase();
-                    if (slopeText == "24db" || slopeText == "24")
-                        filter->setSlope(FilterSlope::slope24dB);
-                    else
-                        filter->setSlope(FilterSlope::slope12dB);
+                    const auto curveText = nodeElement->getStringAttribute("curve", nodeElement->getStringAttribute("filterCurve", "12db")).toLowerCase();
+                    filter->setFilterCurve(filterCurveFromString(curveText));
 
                     filter->setEnvelopeAmount(static_cast<float>(nodeElement->getDoubleAttribute("envAmount", 2000.0)));
                     filter->setAttack(static_cast<float>(nodeElement->getDoubleAttribute("attack", 0.01)));
@@ -611,6 +604,7 @@ namespace nodefm_plugin
                 auto* params = parameterData.getDynamicObject();
                 params->setProperty("frequencyRatio", osc->frequencyRatio);
                 params->setProperty("amplitude", osc->amplitude);
+                params->setProperty("velocityAmount", osc->velocityAmount);
                 params->setProperty("attack", osc->envelope.getAttack());
                 params->setProperty("decay", osc->envelope.getDecay());
                 params->setProperty("sustain", osc->envelope.getSustain());
@@ -625,10 +619,8 @@ namespace nodefm_plugin
                 auto* params = parameterData.getDynamicObject();
                 params->setProperty("cutoff", filter->getCutoff());
                 params->setProperty("resonance", filter->getResonance());
-                params->setProperty("filterType", filter->getFilterMode() == FilterMode::lowpass ? "lowpass"
-                                                    : filter->getFilterMode() == FilterMode::bandpass ? "bandpass"
-                                                                                                : "highpass");
-                params->setProperty("slope", filter->getSlopeString());
+                params->setProperty("filterType", filterModeToString(filter->getFilterMode()));
+                params->setProperty("filterCurve", filterCurveToString(filter->getFilterCurve()));
                 params->setProperty("envAmount", filter->getEnvelopeAmount());
                 params->setProperty("attack", filter->getEnvelope().getAttack());
                 params->setProperty("decay", filter->getEnvelope().getDecay());

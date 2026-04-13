@@ -15,15 +15,17 @@ namespace nodefm_plugin
 
         float *getOutput() { return outputBuffer.getWritePointer(0); }
         
+        virtual void resetInput() { inputSignal = 0.0f; }
         virtual void resetModulation() { modulationInput = 0.0f; }
+        virtual void addInput(float value) { inputSignal += value; }
         virtual void addModulation(float value) { modulationInput += value; }
         virtual void setModulation(float value) { modulationInput = value; } 
-        virtual void addInput(DSPNode *source, float amount) {}
 
         NodeID nodeId;
 
     protected:
         juce::AudioBuffer<float> outputBuffer;
+        float inputSignal = 0.0f;
         float modulationInput = 0.0f;
 
     };

@@ -1,15 +1,15 @@
 import { emitToBackend } from '../api/backendApi.js';
 
 const KNOB_STYLE = {
-  bodyFill: '#2f2f2f',
-  hoverStroke: '#ff9800',
-  stroke: '#4a90e2',
-  ringBackground: '#444',
-  ringValue: '#6ab0f3',
+  bodyFill: '#3a4f66',
+  hoverStroke: '#ffd36e',
+  stroke: '#8cc7ff',
+  ringBackground: '#2a3a4e',
+  ringValue: '#8fd4ff',
   pointer: '#ffffff',
-  labelColor: '#aaaaaa',
-  labelFont: '9px monospace',
-  valueColor: '#6ab0f3',
+  labelColor: '#d7e7f8',
+  labelFont: 'bold 9px monospace',
+  valueColor: '#eaf6ff',
   valueFont: 'bold 10px monospace'
 };
 
@@ -118,13 +118,13 @@ export class Node {
     return null;
   }
 
-  onParameterClick(x, y, graph) {
+  onParameterClick(x, y, graph, event = null) {
     const knob = this.getKnobAt(x, y);
     if (!knob) {
       return false;
     }
 
-    graph.beginKnobAdjustment(this, knob, y);
+    graph.beginKnobAdjustment(this, knob, y, !!(event && event.shiftKey));
     return true;
   }
 
@@ -187,6 +187,20 @@ export class Node {
 
     ctx.fillStyle = KNOB_STYLE.valueColor;
     ctx.font = KNOB_STYLE.valueFont;
+    const valueText = knob.valueText || knob.value.toFixed(2);
+    const valueWidth = ctx.measureText(valueText).width;
+    const valueBadgeW = valueWidth + 8;
+    const valueBadgeH = 12;
+    const valueBadgeX = knob.x - valueBadgeW * 0.5;
+    const valueBadgeY = knob.y + knob.radius + 4;
+
+    ctx.fillStyle = 'rgba(18, 28, 40, 0.95)';
+    ctx.fillRect(valueBadgeX, valueBadgeY, valueBadgeW, valueBadgeH);
+    ctx.strokeStyle = 'rgba(123, 177, 235, 0.85)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(valueBadgeX, valueBadgeY, valueBadgeW, valueBadgeH);
+
+    ctx.fillStyle = KNOB_STYLE.valueColor;
     ctx.fillText(knob.valueText || knob.value.toFixed(2), knob.x, knob.y + knob.radius + 12);
   }
 }

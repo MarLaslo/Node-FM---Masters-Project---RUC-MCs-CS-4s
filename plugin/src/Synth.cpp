@@ -19,7 +19,8 @@ namespace
         resonance,
         envAmount,
         filterType,
-        filterSlope,
+        filterCurve,
+        velocityAmount,
         outGain
     };
 
@@ -47,8 +48,10 @@ namespace
             return ParamKey::envAmount;
         if (key == "filtertype" || key == "mode")
             return ParamKey::filterType;
-        if (key == "filterslope" || key == "slope" || key == "order" || key == "db" || key == "curves")
-            return ParamKey::filterSlope;
+        if (key == "filtercurve" || key == "curve" || key == "slope")
+            return ParamKey::filterCurve;
+        if (key == "velocityamount" || key == "velocity" || key == "vel")
+            return ParamKey::velocityAmount;
         if (key == "outgain")
             return ParamKey::outGain;
 
@@ -149,7 +152,8 @@ void nodefm_plugin::Synth::noteOn(int note, int velocity)
     voice.setNoteFrequency(freq);
 
     // Trigger ADSR envelopes
-    voice.noteOn();
+    const float normalizedVelocity = juce::jlimit(0.0f, 1.0f, static_cast<float>(velocity) / 127.0f);
+    voice.noteOn(normalizedVelocity);
 
     DBG("Note On: " << note << " -> " << freq << " Hz (velocity: " << velocity << ")");
 }
@@ -228,6 +232,13 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String &n
                 osc->setRelease(release);
                 DBG("  Setting release: " << release << " seconds");
             }
+
+            if (obj->hasProperty("velocityAmount"))
+            {
+                float velocityAmount = obj->getProperty("velocityAmount");
+                osc->setVelocityAmount(velocityAmount);
+                DBG("  Setting velocity amount: " << velocityAmount);
+            }
         }
 
         node = std::move(osc);
@@ -264,25 +275,18 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::addNodeToGraph(const juce::String &n
                 DBG("  Setting filter envelope amount: " << envAmount << " Hz");
             }
 
-            const auto filterType = obj->getProperty("filterType").toString().toLowerCase();
-            if (filterType == "highpass" || filterType == "hp")
+            const auto filterCurve = obj->getProperty("filterCurve").toString().toLowerCase();
+            if (filterCurve.contains("24"))
             {
-                filter->setFilterMode(FilterMode::highpass);
-            }
-            else if (filterType == "bandpass" || filterType == "bp")
-            {
-                filter->setFilterMode(FilterMode::bandpass);
+                filter->setFilterCurve(FilterCurve::db24);
             }
             else
             {
-                filter->setFilterMode(FilterMode::lowpass);
+                filter->setFilterCurve(FilterCurve::db12);
             }
 
-            const auto slopeText = obj->getProperty("slope").toString().toLowerCase();
-            if (slopeText == "24db" || slopeText == "24" || slopeText == "2")
-                filter->setSlope(FilterSlope::slope24dB);
-            else
-                filter->setSlope(FilterSlope::slope12dB);
+            const auto filterType = obj->getProperty("filterType").toString().toLowerCase();
+            filter->setFilterMode(filterModeFromString(filterType));
 
             if (obj->hasProperty("attack"))
             {
@@ -434,6 +438,10 @@ void nodefm_plugin::Synth::updateNodeParameter(NodeID nodeId, const juce::String
             osc->setRelease(value);
             DBG("Updated node " << (int)nodeId << " release: " << value << " seconds");
             break;
+        case ParamKey::velocityAmount:
+            osc->setVelocityAmount(value);
+            DBG("Updated node " << (int)nodeId << " velocity amount: " << value);
+            break;
         default:
             DBG("WARNING: Unknown parameter '" << paramName << "' for node " << (int)nodeId);
             break;
@@ -468,12 +476,11 @@ void nodefm_plugin::Synth::updateNodeParameter(NodeID nodeId, const juce::String
                 filter->setFilterMode(FilterMode::bandpass);
             else
                 filter->setFilterMode(FilterMode::highpass);
-
             DBG("Updated filter node " << (int)nodeId << " mode index: " << value);
             break;
-        case ParamKey::filterSlope:
-            filter->setSlope(value >= 0.5f ? FilterSlope::slope24dB : FilterSlope::slope12dB);
-            DBG("Updated filter node " << (int)nodeId << " slope index: " << value);
+        case ParamKey::filterCurve:
+            filter->setFilterCurve(value <= 0.5f ? FilterCurve::db12 : FilterCurve::db24);
+            DBG("Updated filter node " << (int)nodeId << " curve index: " << value);
             break;
         case ParamKey::attack:
             filter->setAttack(value);
@@ -549,6 +556,7 @@ nodefm_plugin::NodeID nodefm_plugin::Synth::clearGraph()
         operatorNode->setSampleRate(sampleRate);
         operatorNode->setFrequencyRatio(1.0f);
         operatorNode->setAmplitude(0.5f);
+        operatorNode->setVelocityAmount(1.0f);
         operatorNode->setAttack(0.01f);
         operatorNode->setDecay(0.1f);
         operatorNode->setSustain(0.7f);

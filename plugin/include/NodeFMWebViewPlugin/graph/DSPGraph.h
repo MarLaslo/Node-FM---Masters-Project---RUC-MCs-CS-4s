@@ -24,7 +24,7 @@ namespace nodefm_plugin
         void setOutputNode(NodeID id);
         void setSampleRate(float sr);
         void setNoteFrequency(float freq);
-        void noteOn();
+        void noteOn(float velocity = 1.0f);
         void noteOff();
         bool isAnyEnvelopeActive() const;
         void reset();

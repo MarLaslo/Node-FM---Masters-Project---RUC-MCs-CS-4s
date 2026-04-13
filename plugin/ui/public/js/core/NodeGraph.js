@@ -1,7 +1,6 @@
 import { emitToBackend } from './api/backendApi.js';
 import { FilterNode } from './nodes/FilterNode.js';
 import { OperatorNode } from './nodes/OperatorNode.js';
-import { AdsrPanel } from './ui/AdsrPanel.js';
 
 export class NodeGraph {
   constructor(canvas) {
@@ -34,8 +33,12 @@ export class NodeGraph {
     this.contextMenuElement = null;
     this.contextMenuListElement = null;
     this.contextMenuNode = null;
+    this.contextMenuKnob = null;
     this.contextMenuConnection = null;
     this.contextMenuCanvasPosition = null;
+    this.knobValueEditorElement = null;
+    this.knobValueEditorInput = null;
+    this.knobValueEditorState = null;
     this.onCanvasAddNodeRequested = null;
     this.viewScale = 1;
     this.viewOffset = { x: 0, y: 0 };
@@ -43,12 +46,127 @@ export class NodeGraph {
     this.maxZoom = 2.4;
     this.zoomStep = 1.1;
     this.parameterPanelMinimized = false;
-    this.adsrPanel = new AdsrPanel((node, paramName, value) => this.emitNodeParameterUpdate(node, paramName, value));
+    this.operatorAdsrExpandedById = this.loadOperatorAdsrExpandedState();
+    this.filterAdsrExpandedById = this.loadFilterAdsrExpandedState();
 
     this.initializeParameterPanelState();
     this.setupCanvas();
     this.setupEventListeners();
     this.startRenderLoop();
+  }
+
+  loadOperatorAdsrExpandedState() {
+    try {
+      const raw = window.localStorage.getItem('nodefm.operatorAdsrExpandedById');
+      if (!raw) {
+        return {};
+      }
+
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        return {};
+      }
+
+      return parsed;
+    } catch (error) {
+      return {};
+    }
+  }
+
+  saveOperatorAdsrExpandedState() {
+    try {
+      window.localStorage.setItem('nodefm.operatorAdsrExpandedById', JSON.stringify(this.operatorAdsrExpandedById));
+    } catch (error) {
+      // Ignore storage errors.
+    }
+  }
+
+  loadFilterAdsrExpandedState() {
+    try {
+      const raw = window.localStorage.getItem('nodefm.filterAdsrExpandedById');
+      if (!raw) {
+        return {};
+      }
+
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        return {};
+      }
+
+      return parsed;
+    } catch (error) {
+      return {};
+    }
+  }
+
+  saveFilterAdsrExpandedState() {
+    try {
+      window.localStorage.setItem('nodefm.filterAdsrExpandedById', JSON.stringify(this.filterAdsrExpandedById));
+    } catch (error) {
+      // Ignore storage errors.
+    }
+  }
+
+  setOperatorAdsrExpanded(node, expanded) {
+    if (!(node instanceof OperatorNode)) {
+      return;
+    }
+
+    node.setAdsrExpanded(!!expanded);
+
+    if (node.backendId !== null && node.backendId !== undefined) {
+      this.operatorAdsrExpandedById[String(node.backendId)] = node.adsrExpanded ? 1 : 0;
+      this.saveOperatorAdsrExpandedState();
+    }
+  }
+
+  applyOperatorAdsrExpandedState(node) {
+    if (!(node instanceof OperatorNode)) {
+      return;
+    }
+
+    const key = node.backendId !== null && node.backendId !== undefined
+      ? String(node.backendId)
+      : null;
+
+    if (!key) {
+      node.setAdsrExpanded(false);
+      return;
+    }
+
+    const stored = this.operatorAdsrExpandedById[key];
+    node.setAdsrExpanded(stored === 1 || stored === true);
+  }
+
+  setFilterAdsrExpanded(node, expanded) {
+    if (!(node instanceof FilterNode)) {
+      return;
+    }
+
+    node.setAdsrExpanded(!!expanded);
+
+    if (node.backendId !== null && node.backendId !== undefined) {
+      this.filterAdsrExpandedById[String(node.backendId)] = node.adsrExpanded ? 1 : 0;
+      this.saveFilterAdsrExpandedState();
+    }
+  }
+
+  applyFilterAdsrExpandedState(node) {
+    if (!(node instanceof FilterNode)) {
+      return;
+    }
+
+    const key = node.backendId !== null && node.backendId !== undefined
+      ? String(node.backendId)
+      : null;
+
+    if (!key) {
+      node.setAdsrExpanded(false);
+      return;
+    }
+
+    const stored = this.filterAdsrExpandedById[key];
+    node.setAdsrExpanded(stored === 1 || stored === true);
   }
 
   initializeParameterPanelState() {
@@ -258,6 +376,7 @@ export class NodeGraph {
 
   onMouseDown(e) {
     this.hideContextMenu();
+    this.hideKnobValueEditor();
 
     if (typeof e.button === 'number' && e.button !== 0) {
       return;
@@ -311,7 +430,7 @@ export class NodeGraph {
 
     if (clickedNode) {
       if (typeof clickedNode.onParameterClick === 'function') {
-        const handled = clickedNode.onParameterClick(pos.x, pos.y, this);
+        const handled = clickedNode.onParameterClick(pos.x, pos.y, this, e);
         if (handled) return;
       }
 
@@ -338,7 +457,7 @@ export class NodeGraph {
     this.mousePos = pos;
 
     if (this.isAdjustingKnob && this.adjustingKnob) {
-      this.updateKnobAdjustment(pos.y);
+      this.updateKnobAdjustment(pos.y, e.shiftKey);
       return;
     }
 
@@ -459,6 +578,7 @@ export class NodeGraph {
 
   onContextMenu(e) {
     e.preventDefault();
+    this.hideKnobValueEditor();
 
     const pos = this.getMousePos(e);
     const node = this.findNodeAtPosition(pos);
@@ -481,6 +601,15 @@ export class NodeGraph {
     this.selectedNode = node;
     this.selectedConnection = null;
     this.showParameterPanel(node);
+
+    if (typeof node.getKnobAt === 'function') {
+      const knob = node.getKnobAt(pos.x, pos.y);
+      if (knob) {
+        this.showKnobContextMenu(e.clientX, e.clientY, node, knob);
+        return;
+      }
+    }
+
     this.showNodeContextMenu(e.clientX, e.clientY, node);
   }
 
@@ -489,7 +618,12 @@ export class NodeGraph {
       return;
     }
 
+    if (this.knobValueEditorElement && this.knobValueEditorElement.contains(e.target)) {
+      return;
+    }
+
     this.hideContextMenu();
+    this.hideKnobValueEditor();
   }
 
   findNodeAtPosition(pos) {
@@ -521,6 +655,7 @@ export class NodeGraph {
 
   showNodeContextMenu(clientX, clientY, node) {
     this.contextMenuNode = node;
+    this.contextMenuKnob = null;
     this.contextMenuConnection = null;
     this.contextMenuCanvasPosition = null;
     const isProtected = this.isNodeProtectedFromDeletion(node);
@@ -538,8 +673,40 @@ export class NodeGraph {
     ]);
   }
 
+  showKnobContextMenu(clientX, clientY, node, knob) {
+    this.contextMenuNode = node;
+    this.contextMenuKnob = {
+      paramName: knob.paramName,
+      label: knob.label || knob.paramName,
+      min: knob.min,
+      max: knob.max
+    };
+    this.contextMenuConnection = null;
+    this.contextMenuCanvasPosition = null;
+
+    this.showContextMenu(clientX, clientY, [
+      {
+        label: `Set ${knob.label || knob.paramName} value...`,
+        onClick: () => {
+          this.hideContextMenu();
+          this.showKnobValueEditor(clientX, clientY, node, knob);
+        }
+      },
+      {
+        label: 'Delete node',
+        color: '#ff7d7d',
+        disabled: this.isNodeProtectedFromDeletion(node),
+        onClick: () => {
+          this.removeNode(node, true);
+          this.hideContextMenu();
+        }
+      }
+    ]);
+  }
+
   showConnectionContextMenu(clientX, clientY, conn) {
     this.contextMenuNode = null;
+    this.contextMenuKnob = null;
     this.contextMenuConnection = conn;
     this.contextMenuCanvasPosition = null;
 
@@ -557,6 +724,7 @@ export class NodeGraph {
 
   showCanvasContextMenu(clientX, clientY, canvasPosition) {
     this.contextMenuNode = null;
+    this.contextMenuKnob = null;
     this.contextMenuConnection = null;
     this.contextMenuCanvasPosition = canvasPosition;
 
@@ -691,8 +859,136 @@ export class NodeGraph {
       this.contextMenuElement.style.display = 'none';
     }
     this.contextMenuNode = null;
+    this.contextMenuKnob = null;
     this.contextMenuConnection = null;
     this.contextMenuCanvasPosition = null;
+  }
+
+  ensureKnobValueEditorElement() {
+    if (this.knobValueEditorElement && this.knobValueEditorInput) {
+      return;
+    }
+
+    const editor = document.createElement('div');
+    editor.style.position = 'fixed';
+    editor.style.zIndex = '1001';
+    editor.style.background = '#202833';
+    editor.style.border = '1px solid #4a90e2';
+    editor.style.borderRadius = '8px';
+    editor.style.padding = '10px';
+    editor.style.minWidth = '190px';
+    editor.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.42)';
+    editor.style.display = 'none';
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.style.width = '100%';
+    input.style.boxSizing = 'border-box';
+    input.style.border = '1px solid #5c7090';
+    input.style.borderRadius = '6px';
+    input.style.background = '#121923';
+    input.style.color = '#e8f2ff';
+    input.style.padding = '8px';
+    input.style.outline = 'none';
+
+    const hint = document.createElement('div');
+    hint.style.marginTop = '6px';
+    hint.style.fontSize = '11px';
+    hint.style.color = '#9bb2ca';
+    hint.textContent = 'Enter to apply, Escape to cancel';
+
+    editor.appendChild(input);
+    editor.appendChild(hint);
+    document.body.appendChild(editor);
+
+    this.knobValueEditorElement = editor;
+    this.knobValueEditorInput = input;
+  }
+
+  showKnobValueEditor(clientX, clientY, node, knob) {
+    this.ensureKnobValueEditorElement();
+    this.knobValueEditorState = {
+      node,
+      paramName: knob.paramName,
+      min: knob.min,
+      max: knob.max
+    };
+
+    const input = this.knobValueEditorInput;
+    input.min = String(knob.min);
+    input.max = String(knob.max);
+
+    const range = Math.abs((knob.max || 0) - (knob.min || 0));
+    if (range <= 1) {
+      input.step = '0.001';
+    } else if (range <= 20) {
+      input.step = '0.01';
+    } else {
+      input.step = '0.1';
+    }
+
+    const currentValue = Number(node[knob.paramName]);
+    input.value = Number.isFinite(currentValue) ? String(currentValue) : String(knob.min);
+
+    const commit = () => {
+      const parsed = Number.parseFloat(input.value);
+      if (!Number.isFinite(parsed)) {
+        return;
+      }
+
+      const state = this.knobValueEditorState;
+      if (!state || !state.node) {
+        return;
+      }
+
+      const clamped = Math.max(state.min, Math.min(state.max, parsed));
+      state.node[state.paramName] = clamped;
+      if (state.paramName === 'frequencyRatio') {
+        state.node.ratio = clamped;
+      }
+      state.node.updateParameter(state.paramName, clamped);
+      if (this.selectedNode === state.node) {
+        this.showParameterPanel(state.node);
+      }
+      this.hideKnobValueEditor();
+    };
+
+    input.onkeydown = (event) => {
+      event.stopPropagation();
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commit();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        this.hideKnobValueEditor();
+      }
+    };
+
+    input.onblur = () => {
+      this.hideKnobValueEditor();
+    };
+
+    const maxX = Math.max(12, window.innerWidth - 220);
+    const maxY = Math.max(12, window.innerHeight - 96);
+    this.knobValueEditorElement.style.left = `${Math.min(clientX, maxX)}px`;
+    this.knobValueEditorElement.style.top = `${Math.min(clientY, maxY)}px`;
+    this.knobValueEditorElement.style.display = 'block';
+
+    input.focus();
+    input.select();
+  }
+
+  hideKnobValueEditor() {
+    if (this.knobValueEditorElement) {
+      this.knobValueEditorElement.style.display = 'none';
+    }
+
+    if (this.knobValueEditorInput) {
+      this.knobValueEditorInput.onkeydown = null;
+      this.knobValueEditorInput.onblur = null;
+    }
+
+    this.knobValueEditorState = null;
   }
 
   isNodeProtectedFromDeletion(node) {
@@ -729,6 +1025,10 @@ export class NodeGraph {
     if (this.adjustingKnob && this.adjustingKnob.node === node) {
       this.isAdjustingKnob = false;
       this.adjustingKnob = null;
+    }
+
+    if (this.knobValueEditorState && this.knobValueEditorState.node === node) {
+      this.hideKnobValueEditor();
     }
 
     if (sendBackendUpdate && backendNodeId !== null && backendNodeId !== undefined) {
@@ -863,7 +1163,7 @@ export class NodeGraph {
     return true;
   }
 
-  beginKnobAdjustment(node, knob, mouseY) {
+  beginKnobAdjustment(node, knob, mouseY, isFineAdjustment = false) {
     this.isAdjustingKnob = true;
     this.adjustingKnob = {
       node,
@@ -871,19 +1171,21 @@ export class NodeGraph {
       min: knob.min,
       max: knob.max,
       sensitivity: knob.sensitivity,
+      isFineAdjustment,
       startY: mouseY,
       startValue: node[knob.paramName]
     };
   }
 
-  updateKnobAdjustment(mouseY) {
+  updateKnobAdjustment(mouseY, isFineAdjustment = false) {
     if (!this.adjustingKnob) {
       return;
     }
 
     const delta = this.adjustingKnob.startY - mouseY;
     const range = this.adjustingKnob.max - this.adjustingKnob.min;
-    const normalizedDelta = (delta / this.adjustingKnob.sensitivity) * range;
+    const sensitivityMultiplier = isFineAdjustment ? 4 : 1;
+    const normalizedDelta = (delta / (this.adjustingKnob.sensitivity * sensitivityMultiplier)) * range;
 
     const newValue = Math.max(
       this.adjustingKnob.min,
@@ -979,11 +1281,14 @@ export class NodeGraph {
   assignBackendNodeData(node, nodeData) {
     node.backendId = nodeData.id;
     node.nodeType = (nodeData.type || '').toLowerCase();
+    this.applyOperatorAdsrExpandedState(node);
+    this.applyFilterAdsrExpandedState(node);
 
     const params = nodeData.data || {};
     if (node instanceof OperatorNode) {
       if (params.frequencyRatio !== undefined) node.frequencyRatio = parseFloat(params.frequencyRatio);
       if (params.amplitude !== undefined) node.amplitude = parseFloat(params.amplitude);
+      if (params.velocityAmount !== undefined) node.velocityAmount = parseFloat(params.velocityAmount);
       if (params.attack !== undefined) node.attack = parseFloat(params.attack);
       if (params.decay !== undefined) node.decay = parseFloat(params.decay);
       if (params.sustain !== undefined) node.sustain = parseFloat(params.sustain);
@@ -1007,8 +1312,12 @@ export class NodeGraph {
         node.filterType = 0;
       }
 
-      const slope = String(params.slope || '').toLowerCase();
-      node.slope = (slope === '24db' || slope === '24' || slope === '1') ? 1 : 0;
+      const filterCurve = (params.filterCurve || params.curve || '').toString().toLowerCase();
+      if (filterCurve.includes('24')) {
+        node.filterCurve = 1;
+      } else {
+        node.filterCurve = 0;
+      }
     }
   }
 
@@ -1068,6 +1377,7 @@ export class NodeGraph {
     });
 
     this.ctx.restore();
+    this.drawConnectionLegend();
   }
 
   drawSelectedNodeHighlight(node) {
@@ -1094,10 +1404,12 @@ export class NodeGraph {
     const isSelected = this.selectedConnection === conn;
     const strength = this.getConnectionStrength(conn);
     const isHovered = this.hoveredConnection === conn;
+    const connectionType = conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode);
     const color = this.getConnectionColor(conn, strength, isSelected || isHovered);
     const baseWidth = 1.5 + strength * 3.5;
     this.ctx.strokeStyle = color;
     this.ctx.lineWidth = isSelected ? baseWidth + 1 : baseWidth;
+    this.ctx.setLineDash(connectionType === 'modulation' ? [8, 6] : []);
     this.ctx.beginPath();
     this.ctx.moveTo(start.x, start.y);
 
@@ -1108,6 +1420,7 @@ export class NodeGraph {
       end.x, end.y
     );
     this.ctx.stroke();
+    this.ctx.setLineDash([]);
 
     if (isSelected || isHovered) {
       const midX = (start.x + end.x) * 0.5;
@@ -1117,6 +1430,46 @@ export class NodeGraph {
       this.ctx.textAlign = 'center';
       this.ctx.fillText(this.formatConnectionValue(conn), midX, midY);
     }
+  }
+
+  drawConnectionLegend() {
+    const x = this.canvas.width - 160;
+    const y = 12;
+    const width = 148;
+    const height = 56;
+
+    this.ctx.save();
+    this.ctx.fillStyle = 'rgba(18, 23, 32, 0.9)';
+    this.ctx.strokeStyle = 'rgba(124, 144, 170, 0.45)';
+    this.ctx.lineWidth = 1;
+    this.ctx.fillRect(x, y, width, height);
+    this.ctx.strokeRect(x, y, width, height);
+
+    this.ctx.font = '11px monospace';
+    this.ctx.textAlign = 'left';
+    this.ctx.textBaseline = 'middle';
+
+    this.ctx.strokeStyle = '#7ed38c';
+    this.ctx.lineWidth = 2.5;
+    this.ctx.setLineDash([]);
+    this.ctx.beginPath();
+    this.ctx.moveTo(x + 10, y + 18);
+    this.ctx.lineTo(x + 38, y + 18);
+    this.ctx.stroke();
+    this.ctx.fillStyle = '#d8f6df';
+    this.ctx.fillText('Gain', x + 48, y + 18);
+
+    this.ctx.strokeStyle = '#59a6ff';
+    this.ctx.setLineDash([8, 6]);
+    this.ctx.beginPath();
+    this.ctx.moveTo(x + 10, y + 37);
+    this.ctx.lineTo(x + 38, y + 37);
+    this.ctx.stroke();
+    this.ctx.setLineDash([]);
+    this.ctx.fillStyle = '#d5ebff';
+    this.ctx.fillText('FM', x + 48, y + 37);
+
+    this.ctx.restore();
   }
 
   getConnectionRange(conn) {
@@ -1261,102 +1614,11 @@ export class NodeGraph {
     controls.innerHTML = '';
     this.applyParameterPanelState();
 
-    if (node instanceof OperatorNode || node instanceof FilterNode) {
-      panel.classList.add('adsr-compact');
-      this.adsrPanel.render(controls, node);
-
-      if (node instanceof FilterNode) {
-        this.createNodeModeControl(controls, node);
-        this.createFilterSlopeControl(controls, node);
-      }
+    if (node instanceof FilterNode || node instanceof OperatorNode) {
+      panel.classList.remove('adsr-compact');
     } else {
       panel.classList.remove('adsr-compact');
     }
-  }
-
-  createNodeModeControl(container, node) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'param-control';
-
-    const label = document.createElement('label');
-    label.textContent = 'Filter Mode';
-
-    const select = document.createElement('select');
-    select.style.width = '100%';
-    select.style.padding = '6px 8px';
-    select.style.marginTop = '6px';
-    select.style.background = '#18202b';
-    select.style.color = '#d4e4f4';
-    select.style.border = '1px solid #32465d';
-    select.style.borderRadius = '4px';
-
-    const modes = [
-      { label: 'Lowpass', value: 0 },
-      { label: 'Bandpass', value: 1 },
-      { label: 'Highpass', value: 2 }
-    ];
-
-    for (const mode of modes) {
-      const option = document.createElement('option');
-      option.textContent = mode.label;
-      option.value = String(mode.value);
-      select.appendChild(option);
-    }
-
-    const currentMode = Number.isFinite(node.filterType) ? node.filterType : 0;
-    select.value = String(Math.max(0, Math.min(2, Math.round(currentMode))));
-
-    select.addEventListener('change', () => {
-      const nextMode = parseInt(select.value, 10);
-      node.filterType = Number.isFinite(nextMode) ? nextMode : 0;
-      this.emitNodeParameterUpdate(node, 'filterType', node.filterType);
-    });
-
-    wrapper.appendChild(label);
-    wrapper.appendChild(select);
-    container.appendChild(wrapper);
-  }
-
-  createFilterSlopeControl(container, node) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'param-control';
-
-    const label = document.createElement('label');
-    label.textContent = 'Filter Slope';
-
-    const select = document.createElement('select');
-    select.style.width = '100%';
-    select.style.padding = '6px 8px';
-    select.style.marginTop = '6px';
-    select.style.background = '#18202b';
-    select.style.color = '#d4e4f4';
-    select.style.border = '1px solid #32465d';
-    select.style.borderRadius = '4px';
-
-    const slopes = [
-      { label: '12 dB / Oct', value: 0 },
-      { label: '24 dB / Oct', value: 1 }
-    ];
-
-    for (const slope of slopes) {
-      const option = document.createElement('option');
-      option.textContent = slope.label;
-      option.value = String(slope.value);
-      select.appendChild(option);
-    }
-
-    const currentSlope = Number.isFinite(node.slope) ? node.slope : 0;
-    select.value = String(Math.max(0, Math.min(1, Math.round(currentSlope))));
-
-    select.addEventListener('change', () => {
-      const nextSlope = parseInt(select.value, 10);
-      node.slope = Number.isFinite(nextSlope) ? nextSlope : 0;
-      this.emitNodeParameterUpdate(node, 'slope', node.slope);
-    });
-
-    wrapper.appendChild(label);
-    wrapper.appendChild(select);
-    container.appendChild(wrapper);
   }
 
   showConnectionPanel(conn) {

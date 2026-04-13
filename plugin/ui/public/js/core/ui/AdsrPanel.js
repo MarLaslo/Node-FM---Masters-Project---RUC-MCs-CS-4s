@@ -196,10 +196,10 @@ export class AdsrPanel {
       const startY = event.clientY;
       const startValue = currentValue;
       const range = max - min;
-      const sensitivity = paramName === 'sustain' ? 180 : 260;
 
       const handleMove = (moveEvent) => {
         const deltaY = startY - moveEvent.clientY;
+        const sensitivity = (paramName === 'sustain' ? 180 : 260) * (moveEvent.shiftKey ? 4 : 1);
         const nextValue = startValue + (deltaY / sensitivity) * range;
         commitValue(nextValue);
       };

@@ -222,6 +222,7 @@ export class BackendBridge {
     const data = {
       frequencyRatio: 1.0,
       amplitude: 0.5,
+      velocityAmount: 1.0,
       attack: 0.01,
       decay: 0.1,
       sustain: 0.7,
@@ -255,7 +256,7 @@ export class BackendBridge {
       resonance: 0.707,
       envAmount: 2000,
       filterType: 'lowpass',
-      slope: '12db',
+      filterCurve: '12db',
       attack: 0.01,
       decay: 0.1,
       sustain: 0.7,
