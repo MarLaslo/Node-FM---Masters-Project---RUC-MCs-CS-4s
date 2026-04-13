@@ -45,11 +45,9 @@ export class NodeGraph {
     this.minZoom = 0.4;
     this.maxZoom = 2.4;
     this.zoomStep = 1.1;
-    this.parameterPanelMinimized = false;
     this.operatorAdsrExpandedById = this.loadOperatorAdsrExpandedState();
     this.filterAdsrExpandedById = this.loadFilterAdsrExpandedState();
 
-    this.initializeParameterPanelState();
     this.setupCanvas();
     this.setupEventListeners();
     this.startRenderLoop();
@@ -167,34 +165,6 @@ export class NodeGraph {
 
     const stored = this.filterAdsrExpandedById[key];
     node.setAdsrExpanded(stored === 1 || stored === true);
-  }
-
-  initializeParameterPanelState() {
-    const storedValue = window.localStorage.getItem('nodefm.paramPanelMinimized');
-    this.parameterPanelMinimized = storedValue === '1';
-
-    const toggleButton = document.getElementById('paramPanelToggle');
-    if (toggleButton) {
-      toggleButton.addEventListener('click', () => {
-        this.parameterPanelMinimized = !this.parameterPanelMinimized;
-        window.localStorage.setItem('nodefm.paramPanelMinimized', this.parameterPanelMinimized ? '1' : '0');
-        this.applyParameterPanelState();
-      });
-    }
-
-    this.applyParameterPanelState();
-  }
-
-  applyParameterPanelState() {
-    const panel = document.getElementById('paramPanel');
-    const toggleButton = document.getElementById('paramPanelToggle');
-    if (!panel || !toggleButton) {
-      return;
-    }
-
-    panel.classList.toggle('is-minimized', this.parameterPanelMinimized);
-    toggleButton.textContent = this.parameterPanelMinimized ? '+' : '_';
-    toggleButton.title = this.parameterPanelMinimized ? 'Expand panel' : 'Minimize panel';
   }
 
   setupCanvas() {
@@ -438,12 +408,9 @@ export class NodeGraph {
       this.isDragging = true;
       this.dragOffset = { x: pos.x - clickedNode.x, y: pos.y - clickedNode.y };
       this.selectedConnection = null;
-
-      this.showParameterPanel(clickedNode);
     }
 
     if (!nodeClicked) {
-      this.hideParameterPanel();
       this.selectedConnection = null;
       this.isPanning = true;
       this.panStart = this.getCanvasPos(e);
@@ -600,7 +567,6 @@ export class NodeGraph {
 
     this.selectedNode = node;
     this.selectedConnection = null;
-    this.showParameterPanel(node);
 
     if (typeof node.getKnobAt === 'function') {
       const knob = node.getKnobAt(pos.x, pos.y);
@@ -947,9 +913,6 @@ export class NodeGraph {
         state.node.ratio = clamped;
       }
       state.node.updateParameter(state.paramName, clamped);
-      if (this.selectedNode === state.node) {
-        this.showParameterPanel(state.node);
-      }
       this.hideKnobValueEditor();
     };
 
@@ -1007,7 +970,6 @@ export class NodeGraph {
 
     if (this.selectedNode === node) {
       this.selectedNode = null;
-      this.hideParameterPanel();
     }
 
     if (
@@ -1052,7 +1014,6 @@ export class NodeGraph {
 
     if (this.selectedConnection === conn) {
       this.selectedConnection = null;
-      this.hideParameterPanel();
     }
 
     if (this.hoveredConnection === conn) {
@@ -1206,7 +1167,6 @@ export class NodeGraph {
     this.connections = [];
     this.selectedNode = null;
     this.selectedConnection = null;
-    this.hideParameterPanel();
 
     if (sendBackendUpdate) {
       emitToBackend({ type: 'CLEAR_GRAPH' });
@@ -1602,106 +1562,6 @@ export class NodeGraph {
       requestAnimationFrame(loop);
     };
     loop();
-  }
-
-  showParameterPanel(node) {
-    const panel = document.getElementById('paramPanel');
-    const title = document.getElementById('paramTitle');
-    const controls = document.getElementById('paramControls');
-
-    panel.style.display = 'block';
-    title.textContent = `${node.title} (ID: ${node.backendId})`;
-    controls.innerHTML = '';
-    this.applyParameterPanelState();
-
-    if (node instanceof FilterNode || node instanceof OperatorNode) {
-      panel.classList.remove('adsr-compact');
-    } else {
-      panel.classList.remove('adsr-compact');
-    }
-  }
-
-  showConnectionPanel(conn) {
-    const panel = document.getElementById('paramPanel');
-    const title = document.getElementById('paramTitle');
-    const controls = document.getElementById('paramControls');
-
-    panel.classList.remove('adsr-compact');
-
-    const connectionType = conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode);
-    const isGainConnection = connectionType === 'gain';
-    const label = isGainConnection ? 'Gain' : 'Modulation Index';
-    const min = isGainConnection ? 0 : 0;
-    const max = isGainConnection ? 2 : 20;
-    const step = isGainConnection ? 0.01 : 0.1;
-
-    title.textContent = `Connection: ${conn.fromNode.title} -> ${conn.toNode.title} (${connectionType})`;
-    controls.innerHTML = '';
-
-    this.createConnectionControl(controls, label, 'amount', conn.amount, min, max, step, conn);
-
-    panel.style.display = 'block';
-    this.applyParameterPanelState();
-  }
-
-  createConnectionControl(container, label, paramName, value, min, max, step, conn) {
-    const div = document.createElement('div');
-    div.className = 'param-control';
-
-    const labelElem = document.createElement('label');
-    labelElem.textContent = label;
-
-    const valueDisplay = document.createElement('span');
-    valueDisplay.className = 'param-value';
-    valueDisplay.textContent = value.toFixed(2);
-    labelElem.appendChild(valueDisplay);
-
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = min;
-    slider.max = max;
-    slider.step = step;
-    slider.value = value;
-
-    const numberInput = document.createElement('input');
-    numberInput.type = 'number';
-    numberInput.min = min;
-    numberInput.max = max;
-    numberInput.step = step;
-    numberInput.value = value;
-
-    const updateValue = (newValue) => {
-      const parsed = parseFloat(newValue);
-      slider.value = parsed;
-      numberInput.value = parsed;
-      valueDisplay.textContent = parsed.toFixed(2);
-
-      conn[paramName] = parsed;
-
-      emitToBackend({
-        type: 'UPDATE_CONNECTION',
-        data: {
-          sourceNodeId: conn.fromNode.backendId,
-          destNodeId: conn.toNode.backendId,
-          amount: parsed,
-          connectionType: conn.connectionType || this.inferConnectionType(conn.fromNode, conn.toNode)
-        }
-      });
-    };
-
-    slider.addEventListener('input', (e) => updateValue(e.target.value));
-    numberInput.addEventListener('input', (e) => updateValue(e.target.value));
-
-    div.appendChild(labelElem);
-    div.appendChild(slider);
-    div.appendChild(numberInput);
-    container.appendChild(div);
-  }
-
-  hideParameterPanel() {
-    const panel = document.getElementById('paramPanel');
-    panel.classList.remove('adsr-compact');
-    panel.style.display = 'none';
   }
 
   emitNodeParameterUpdate(node, paramName, value) {

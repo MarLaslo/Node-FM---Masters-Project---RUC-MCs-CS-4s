@@ -63,7 +63,7 @@ namespace nodefm_plugin
 
         webView.goToURL(webView.getResourceProviderRoot());
         setResizable(true, true);
-        setSize(800, 600);
+        setSize(980, 600);
         startTimerHz(30);
 
         juce::Component::SafePointer<AudioPluginAudioProcessorEditor> safeThis(this);
